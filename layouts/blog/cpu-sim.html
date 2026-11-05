@@ -1,0 +1,11 @@
+{{ define "main" }}
+<article class="post-single">
+  <header class="post-header">
+    <h1 class="post-title">{{ .Title }}</h1>
+    {{ with .Description }}<div class="post-description">{{ . }}</div>{{ end }}
+  </header>
+  <iframe src="/cpu-simulator/index.html" title="{{ .Title }}" loading="lazy"
+          style="width:100%;height:90vh;min-height:700px;border:0;border-radius:8px;"></iframe>
+  <p><a href="/cpu-simulator/index.html" target="_blank" rel="noopener">Open full screen &rarr;</a></p>
+</article>
+{{ end }}

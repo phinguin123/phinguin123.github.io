@@ -1,0 +1,95 @@
+baseURL: "https://phinguin.dev/"
+languageCode: en-us
+title: phinguin123
+theme: PaperMod
+
+enableRobotsTXT: true
+buildDrafts: false
+buildFuture: false
+buildExpired: false
+pagerSize: 10
+
+minify:
+  disableXML: true
+  minifyOutput: true
+
+outputs:
+  home:
+    - HTML
+    - RSS
+    - JSON
+
+copyright: "© 2026 phinguin"      
+
+params:
+  env: production
+  title: phinguin
+  description: "phinguin's blog"
+  author: phinguin
+  defaultTheme: dark
+  disableThemeToggle: false
+  ShowReadingTime: true
+  ShowShareButtons: false
+  ShowPostNavLinks: true
+  ShowBreadCrumbs: true
+  ShowCodeCopyButtons: true
+  ShowToc: true
+  TocOpen: false
+  mainSections:
+    - blog
+
+  profileMode:
+    enabled: true
+    title: phinguin
+    subtitle: "Developer/Security Researcher"
+    imageUrl: "home/profile.png"   # file in static/home/
+    imageWidth: 150
+    imageHeight: 150
+
+  socialIcons:
+    - name: github
+      url: "https://github.com/phinguin123"
+
+  fuseOpts:
+    isCaseSensitive: false
+    shouldSort: true
+    location: 0
+    distance: 1000
+    threshold: 0.4
+    minMatchCharLength: 0
+    keys: ["title", "permalink", "summary", "content"]
+
+menu:
+  main:
+    - identifier: home
+      name: Home
+      url: /
+      weight: 10
+    - identifier: blog
+      name: Blog
+      url: /blog/
+      weight: 20
+    - identifier: about
+      name: About
+      url: /about/
+      weight: 30
+    - identifier: search
+      name: Search
+      url: /search/
+      weight: 40
+    - identifier: categories
+      name: Categories
+      url: /categories/
+      weight: 50
+    - identifier: tags
+      name: Tags
+      url: /tags/
+      weight: 60
+
+markup:
+  goldmark:
+    renderer:
+      unsafe: true
+  highlight:
+    noClasses: false
+

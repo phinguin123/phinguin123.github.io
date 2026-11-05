@@ -1,0 +1,2935 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CPU Architecture & Fetch–Decode–Execute Simulator</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & Fira Code -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['Fira Code', 'monospace'],
+          },
+          colors: {
+            slate: {
+              850: '#131c2e',
+              925: '#0b1120',
+              950: '#060a14'
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    /* Custom Scrollbars & Animations */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.4);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(100, 116, 139, 0.5);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(148, 163, 184, 0.8);
+    }
+
+    @keyframes pulseGlowCyan {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.4), 0 0 18px rgba(6, 182, 212, 0.35); }
+      50% { box-shadow: 0 0 0 5px rgba(6, 182, 212, 0.15), 0 0 26px rgba(6, 182, 212, 0.6); }
+    }
+    @keyframes pulseGlowEmerald {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4), 0 0 18px rgba(16, 185, 129, 0.35); }
+      50% { box-shadow: 0 0 0 5px rgba(16, 185, 129, 0.15), 0 0 26px rgba(16, 185, 129, 0.6); }
+    }
+    @keyframes pulseGlowAmber {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4), 0 0 18px rgba(245, 158, 11, 0.35); }
+      50% { box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.15), 0 0 26px rgba(245, 158, 11, 0.6); }
+    }
+    @keyframes busFlowRight {
+      0% { background-position: 0 0; }
+      100% { background-position: 28px 0; }
+    }
+    @keyframes busFlowLeft {
+      0% { background-position: 28px 0; }
+      100% { background-position: 0 0; }
+    }
+
+    .reg-active-read {
+      animation: pulseGlowCyan 1.4s infinite ease-in-out;
+      border-color: #06b6d4 !important;
+    }
+    .reg-active-write {
+      animation: pulseGlowEmerald 1.4s infinite ease-in-out;
+      border-color: #10b981 !important;
+    }
+    .reg-active-decode {
+      animation: pulseGlowAmber 1.4s infinite ease-in-out;
+      border-color: #f59e0b !important;
+    }
+
+    .bus-track-right {
+      background-image: repeating-linear-gradient(
+        90deg,
+        transparent,
+        transparent 8px,
+        currentColor 8px,
+        currentColor 16px
+      );
+      background-size: 28px 100%;
+      animation: busFlowRight 0.55s linear infinite;
+    }
+    .bus-track-left {
+      background-image: repeating-linear-gradient(
+        90deg,
+        transparent,
+        transparent 8px,
+        currentColor 8px,
+        currentColor 16px
+      );
+      background-size: 28px 100%;
+      animation: busFlowLeft 0.55s linear infinite;
+    }
+
+    /* Line-numbered editor alignment */
+    .code-editor-textarea, .code-editor-gutter {
+      font-family: 'Fira Code', monospace;
+      font-size: 0.85rem;
+      line-height: 1.65rem;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 font-sans antialiased selection:bg-cyan-500 selection:text-white transition-colors duration-200 min-h-screen flex flex-col">
+
+  <!-- ==================== TOP NAVIGATION & HEADER ==================== -->
+  <header class="sticky top-0 z-40 border-b border-slate-200 dark:border-slate-800/90 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md">
+    <div class="max-w-[1600px] mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+      <!-- Brand / Title -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 via-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-cyan-500/20">
+          <i class="fa-solid fa-microchip text-lg"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base sm:text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">
+              CPU Architecture &amp; FDE Simulator
+            </h1>
+            <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-mono font-semibold bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">
+              Von Neumann / LMC
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400">
+            Interactive Fetch–Decode–Execute cycle, Registers, Buses, 16-Cell RAM, Cache Hierarchy, Multi-Core &amp; Pipelining
+          </p>
+        </div>
+      </div>
+
+      <!-- Quick Section Jump & Utility Buttons -->
+      <div class="flex items-center flex-wrap gap-2">
+        <a href="#fde-sim-section" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-800 transition">
+          <i class="fa-solid fa-play mr-1.5 text-cyan-500"></i>1. CPU &amp; FDE Sim
+        </a>
+        <a href="#beyond-section" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-800 transition">
+          <i class="fa-solid fa-layer-group mr-1.5 text-amber-500"></i>2. Cache, Cores &amp; Pipeline
+        </a>
+        <button id="btn-open-isa" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border border-indigo-500/30 transition flex items-center gap-1.5">
+          <i class="fa-solid fa-book-open"></i>
+          <span>ISA Reference</span>
+        </button>
+        <button id="btn-theme-toggle" class="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 transition" title="Toggle Dark/Light Theme">
+          <i id="theme-icon" class="fa-solid fa-sun text-amber-400"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================== MAIN WORKSPACE ==================== -->
+  <main class="max-w-[1600px] w-full mx-auto px-4 sm:px-6 py-5 space-y-10 flex-1">
+
+    <!-- ==================== PART 1: INTERACTIVE CPU SIMULATOR ==================== -->
+    <section id="fde-sim-section" class="space-y-4">
+      <!-- Starter Programs & Top Action Bar -->
+      <div class="rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 p-3.5 shadow-sm flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mr-1 flex items-center gap-1.5">
+            <i class="fa-solid fa-code text-cyan-500"></i>Starter Programs:
+          </span>
+          <button data-preset="add_two" class="preset-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/25 transition">
+            Starter: Add Two Numbers
+          </button>
+          <button data-preset="add_inputs" class="preset-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-cyan-500/40 transition">
+            Add Two Inputs (INP)
+          </button>
+          <button data-preset="countdown" class="preset-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-cyan-500/40 transition">
+            Countdown Loop (BRZ / BRP)
+          </button>
+          <button data-preset="max_two" class="preset-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-cyan-500/40 transition">
+            Compare &amp; Max of Two Inputs
+          </button>
+        </div>
+
+        <!-- Legend Pills -->
+        <div class="flex flex-wrap items-center gap-3 text-[11px] font-mono">
+          <span class="inline-flex items-center gap-1.5 text-cyan-600 dark:text-cyan-400">
+            <span class="w-2.5 h-2.5 rounded-full bg-cyan-500"></span>Fetch / Address Bus
+          </span>
+          <span class="inline-flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>Decode / Control Bus
+          </span>
+          <span class="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>Execute / Data Bus
+          </span>
+          <span class="inline-flex items-center gap-1.5 text-rose-600 dark:text-rose-400">
+            <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>ALU &amp; Branch
+          </span>
+        </div>
+      </div>
+
+      <!-- 3-Column CPU Simulator Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+
+        <!-- ==================== LEFT COLUMN: ASSEMBLY EDITOR + I/O (3 COLS) ==================== -->
+        <div class="lg:col-span-3 space-y-4">
+          <!-- Assembly Editor Card -->
+          <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div class="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-900/60">
+              <div>
+                <h2 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <i class="fa-solid fa-terminal text-cyan-500 text-xs"></i>
+                  <span>Program Editor</span>
+                </h2>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">One instruction per line (0–15)</p>
+              </div>
+              <span id="asm-status-badge" class="px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                ✓ Valid ASM
+              </span>
+            </div>
+
+            <!-- Editor Body with Synchronized Line Numbers -->
+            <div class="relative flex bg-slate-100/70 dark:bg-slate-950/90 border-b border-slate-200 dark:border-slate-800">
+              <div id="code-gutter" class="code-editor-gutter select-none py-3 px-2.5 text-right text-slate-400 dark:text-slate-600 bg-slate-200/50 dark:bg-slate-900/80 border-r border-slate-200 dark:border-slate-800 min-w-[2.75rem]">
+                <!-- Populated dynamically -->
+              </div>
+              <textarea
+                id="asm-editor"
+                rows="10"
+                spellcheck="false"
+                class="code-editor-textarea w-full py-3 px-3 bg-transparent text-slate-900 dark:text-slate-100 focus:outline-none resize-y font-mono"
+                placeholder="LDA 6&#10;ADD 7&#10;OUT&#10;HLT"
+              ></textarea>
+            </div>
+
+            <!-- Syntax / Assembler Error Banner -->
+            <div id="asm-error-box" class="hidden px-3.5 py-2 bg-rose-500/10 border-b border-rose-500/30 text-xs font-mono text-rose-600 dark:text-rose-400"></div>
+
+            <!-- Editor Action Buttons -->
+            <div class="p-3 flex items-center gap-2 bg-white dark:bg-slate-900">
+              <button id="btn-assemble" class="flex-1 py-2 px-3 rounded-xl text-xs font-bold bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-md shadow-cyan-500/20 transition flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-download"></i>
+                <span>Assemble into RAM</span>
+              </button>
+              <button id="btn-clear-asm" class="py-2 px-3 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition">
+                Clear
+              </button>
+            </div>
+          </div>
+
+          <!-- Input Queue Box -->
+          <div id="input-queue-card" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3 transition-all">
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                  <i class="fa-solid fa-keyboard text-amber-500"></i>
+                  <span>Input Stream (for INP)</span>
+                </h3>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">Comma or space-separated integers</p>
+              </div>
+              <span id="input-queue-count" class="px-2 py-0.5 rounded-md text-[11px] font-mono bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                0 waiting
+              </span>
+            </div>
+
+            <div class="flex gap-2">
+              <input
+                id="input-stream-field"
+                type="text"
+                value="12, 8"
+                placeholder="e.g. 12, 8"
+                class="w-full px-3 py-1.5 rounded-lg text-xs font-mono bg-slate-100 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
+              />
+              <button id="btn-apply-inputs" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-300 border border-amber-500/30 transition shrink-0">
+                Set Queue
+              </button>
+            </div>
+
+            <!-- Visual Queue Pills -->
+            <div id="input-pills-container" class="flex flex-wrap gap-1.5 pt-1 min-h-[26px]">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+
+          <!-- Output Tape / Console -->
+          <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                  <i class="fa-solid fa-display text-emerald-500"></i>
+                  <span>Output Tape (from OUT)</span>
+                </h3>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">Values emitted by AC during execution</p>
+              </div>
+              <button id="btn-clear-output" class="text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition">
+                Clear
+              </button>
+            </div>
+
+            <div id="output-console" class="min-h-[84px] max-h-[160px] overflow-y-auto rounded-xl bg-slate-950 p-3 font-mono text-xs text-emerald-400 border border-slate-800 space-y-1.5">
+              <div class="text-slate-500 italic">No output emitted yet...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== CENTER COLUMN: CPU CORE, REGISTERS, ALU & BUSES (5 COLS) ==================== -->
+        <div class="lg:col-span-5 space-y-4">
+
+          <!-- Execution Controls Bar -->
+          <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3.5 shadow-sm space-y-3">
+            <div class="flex flex-wrap items-center gap-2">
+              <button id="btn-micro-step" class="flex-1 min-w-[140px] py-2.5 px-3.5 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-md shadow-emerald-500/20 transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-forward-step"></i>
+                <span>Step Micro-Op (FDE)</span>
+              </button>
+              <button id="btn-full-step" class="py-2.5 px-3.5 rounded-xl text-xs font-bold bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 transition flex items-center justify-center gap-1.5" title="Complete the entire current instruction's Fetch-Decode-Execute cycle">
+                <i class="fa-solid fa-forward-fast"></i>
+                <span>Full Instruction</span>
+              </button>
+              <button id="btn-autorun" class="py-2.5 px-3.5 rounded-xl text-xs font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/30 transition flex items-center justify-center gap-1.5">
+                <i id="autorun-icon" class="fa-solid fa-play"></i>
+                <span id="autorun-label">Auto-Run</span>
+              </button>
+              <button id="btn-reset-cpu" class="py-2.5 px-3 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition flex items-center gap-1.5" title="Reset registers and PC to 0">
+                <i class="fa-solid fa-rotate-left"></i>
+                <span>Reset</span>
+              </button>
+            </div>
+
+            <!-- Speed Slider & Cycle Counters -->
+            <div class="pt-2 border-t border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div class="flex items-center gap-2">
+                <span class="text-slate-500 dark:text-slate-400 font-medium">Clock Speed:</span>
+                <input id="speed-slider" type="range" min="1" max="5" step="1" value="3" class="w-24 accent-cyan-500 cursor-pointer" />
+                <span id="speed-label" class="font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">1.5x</span>
+              </div>
+              <div class="flex items-center gap-3 font-mono text-[11px]">
+                <span class="text-slate-500 dark:text-slate-400">
+                  Instr Completed: <strong id="stat-instructions" class="text-slate-900 dark:text-white">0</strong>
+                </span>
+                <span class="text-slate-500 dark:text-slate-400">
+                  Micro-Steps: <strong id="stat-microsteps" class="text-cyan-600 dark:text-cyan-400">0</strong>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live FDE Phase Indicator & Narrator Box -->
+          <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
+            <!-- Phase Pipeline Strip -->
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5">
+                <span id="phase-pill-fetch" class="px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 transition-all">
+                  1. FETCH
+                </span>
+                <i class="fa-solid fa-chevron-right text-[10px] text-slate-400"></i>
+                <span id="phase-pill-decode" class="px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 transition-all">
+                  2. DECODE
+                </span>
+                <i class="fa-solid fa-chevron-right text-[10px] text-slate-400"></i>
+                <span id="phase-pill-execute" class="px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 transition-all">
+                  3. EXECUTE
+                </span>
+              </div>
+
+              <!-- Current Micro-Step Badge + RTL -->
+              <div class="flex items-center gap-2">
+                <span id="rtl-badge" class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-slate-100 dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 border border-slate-200 dark:border-slate-700">
+                  READY
+                </span>
+                <span id="micro-state-badge" class="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                  IDLE
+                </span>
+              </div>
+            </div>
+
+            <!-- Human-Readable Live Narrator -->
+            <div id="narrator-banner" class="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/90 border border-slate-200/90 dark:border-slate-800 text-xs sm:text-sm text-slate-700 dark:text-slate-200 leading-relaxed font-medium">
+              Program assembled into RAM. Click <strong class="text-emerald-500">Step Micro-Op (FDE)</strong> to watch how the Program Counter (PC) begins the Fetch phase.
+            </div>
+          </div>
+
+          <!-- CPU Internal Registers Grid -->
+          <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                <i class="fa-solid fa-microchip text-cyan-500"></i>
+                <span>CPU Internal Registers</span>
+              </h3>
+              <span class="text-[11px] font-mono text-slate-400">Tracks current &amp; before-last-write values</span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <!-- PC Register Card -->
+              <div id="reg-card-PC" class="rounded-xl bg-slate-50 dark:bg-slate-950/80 border-2 border-slate-200 dark:border-slate-800 p-3 transition-all duration-200">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs font-bold text-slate-800 dark:text-slate-100 font-mono">PC — Program Counter</span>
+                  <span id="reg-op-PC" class="hidden px-1.5 py-0.5 rounded text-[10px] font-mono font-bold"></span>
+                </div>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mb-2">Holds RAM address of the next instruction</p>
+                <div class="flex items-baseline justify-between pt-1.5 border-t border-slate-200/70 dark:border-slate-800/80">
+                  <div>
+                    <div class="text-[10px] uppercase font-semibold text-slate-400">Current</div>
+                    <div id="reg-val-PC" class="text-xl font-mono font-bold text-cyan-600 dark:text-cyan-400">0</div>
+                  </div>
+                  <div class="text-right">
+                    <div class="text-[10px] uppercase font-semibold text-slate-400">Before last write</div>
+                    <div id="reg-prev-PC" class="text-xs font-mono text-slate-500 dark:text-slate-400">No write recorded</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- MAR Register Card -->
+              <div id="reg-card-MAR" class="rounded-xl bg-slate-50 dark:bg-slate-950/80 border-2 border-slate-200 dark:border-slate-800 p-3 transition-all duration-200">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs font-bold text-slate-800 dark:text-slate-100 font-mono">MAR — Memory Address Reg</span>
+                  <span id="reg-op-MAR" class="hidden px-1.5 py-0.5 rounded text-[10px] font-mono font-bold"></span>
+                </div>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mb-2">Drives target address onto the Address Bus</p>
+                <div class="flex items-baseline justify-between pt-1.5 border-t border-slate-200/70 dark:border-slate-800/80">
+                  <div>
+                    <div class="text-[10px] uppercase font-semibold text-slate-400">Current</div>
+                    <div id="reg-val-MAR" class="text-xl font-mono font-bold text-cyan-600 dark:text-cyan-400">—</div>
+                  </div>
+                  <div class="text-right">
+                    <div class="text-[10px] uppercase font-semibold text-slate-400">Before last write</div>
+                    <div id="reg-prev-MAR" class="text-xs font-mono text-slate-500 dark:text-slate-400">No write recorded</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- MDR Register Card -->
+              <div id="reg-card-MDR" class="rounded-xl bg-slate-50 dark:bg-slate-950/80 border-2 border-slate-200 dark:border-slate-800 p-3 transition-all duration-200">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs font-bold text-slate-800 dark:text-slate-100 font-mono">MDR — Memory Data Reg</span>
+                  <span id="reg-op-MDR" class="hidden px-1.5 py-0.5 rounded text-[10px] font-mono font-bold"></span>
+                </div>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mb-2">Buffers instruction/data sent over Data Bus</p>
+                <div class="flex items-baseline justify-between pt-1.5 border-t border-slate-200/70 dark:border-slate-800/80">
+                  <div>
+                    <div class="text-[10px] uppercase font-semibold text-slate-400">Current</div>
+                    <div id="reg-val-MDR" class="text-xl font-mono font-bold text-emerald-600 dark:text-emerald-400">—</div>
+                  </div>
+                  <div class="text-right">
+                    <div class="text-[10px] uppercase font-semibold text-slate-400">Before last write</div>
+                    <div id="reg-prev-MDR" class="text-xs font-mono text-slate-500 dark:text-slate-400">No write recorded</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- IR Register Card -->
+              <div id="reg-card-IR" class="rounded-xl bg-slate-50 dark:bg-slate-950/80 border-2 border-slate-200 dark:border-slate-800 p-3 transition-all duration-200">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs font-bold text-slate-800 dark:text-slate-100 font-mono">IR — Instruction Register</span>
+                  <span id="reg-op-IR" class="hidden px-1.5 py-0.5 rounded text-[10px] font-mono font-bold"></span>
+                </div>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mb-2">Holds current instruction being decoded</p>
+                <div class="flex items-baseline justify-between pt-1.5 border-t border-slate-200/70 dark:border-slate-800/80">
+                  <div>
+                    <div class="text-[10px] uppercase font-semibold text-slate-400">Current</div>
+                    <div id="reg-val-IR" class="text-xl font-mono font-bold text-amber-600 dark:text-amber-400">—</div>
+                  </div>
+                  <div class="text-right">
+                    <div class="text-[10px] uppercase font-semibold text-slate-400">Before last write</div>
+                    <div id="reg-prev-IR" class="text-xs font-mono text-slate-500 dark:text-slate-400">No write recorded</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- AC (Accumulator) Full-Width Register Card -->
+              <div id="reg-card-AC" class="sm:col-span-2 rounded-xl bg-slate-50 dark:bg-slate-950/80 border-2 border-slate-200 dark:border-slate-800 p-3 transition-all duration-200">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs font-bold text-slate-800 dark:text-slate-100 font-mono">AC — Accumulator Register</span>
+                  <span id="reg-op-AC" class="hidden px-1.5 py-0.5 rounded text-[10px] font-mono font-bold"></span>
+                </div>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mb-2">Primary working register for ALU arithmetic (ADD, SUB), loads/stores (LDA, STA), and I/O (INP, OUT)</p>
+                <div class="flex items-baseline justify-between pt-1.5 border-t border-slate-200/70 dark:border-slate-800/80">
+                  <div>
+                    <div class="text-[10px] uppercase font-semibold text-slate-400">Current Value</div>
+                    <div id="reg-val-AC" class="text-2xl font-mono font-extrabold text-rose-600 dark:text-rose-400">0</div>
+                  </div>
+                  <div class="text-right">
+                    <div class="text-[10px] uppercase font-semibold text-slate-400">Before last write</div>
+                    <div id="reg-prev-AC" class="text-xs font-mono text-slate-500 dark:text-slate-400">No write recorded</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Control Unit (CU) & Arithmetic Logic Unit (ALU) Status Bar -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <!-- Control Unit -->
+              <div id="cu-box" class="rounded-xl bg-slate-100/80 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                    <i class="fa-solid fa-sitemap mr-1"></i>Control Unit (CU)
+                  </span>
+                  <span id="cu-opcode-badge" class="text-[11px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-300 border border-amber-500/20">
+                    IDLE
+                  </span>
+                </div>
+                <div id="cu-detail" class="text-xs font-mono text-slate-600 dark:text-slate-300 truncate">
+                  Awaiting instruction in IR
+                </div>
+              </div>
+
+              <!-- ALU & Flags -->
+              <div id="alu-box" class="rounded-xl bg-slate-100/80 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-[11px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                    <i class="fa-solid fa-calculator mr-1"></i>ALU &amp; Status Flags
+                  </span>
+                  <span id="alu-op-badge" class="text-[11px] font-mono px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-600 dark:text-rose-300 border border-rose-500/20">
+                    IDLE
+                  </span>
+                </div>
+                <div class="flex items-center gap-2 pt-0.5">
+                  <span id="flag-Z" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/40">
+                    Z (AC=0): 1
+                  </span>
+                  <span id="flag-P" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 border border-cyan-500/40">
+                    P (AC≥0): 1
+                  </span>
+                  <span id="flag-N" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-200 dark:bg-slate-800 text-slate-400 border border-slate-300 dark:border-slate-700">
+                    N (AC&lt;0): 0
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- System Buses Visualizer (Address, Data, Control) -->
+          <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                <i class="fa-solid fa-network-wired text-emerald-500"></i>
+                <span>System Buses (CPU ↔ RAM Interconnect)</span>
+              </h3>
+              <span class="text-[11px] font-mono text-slate-400">Live signal conduits</span>
+            </div>
+
+            <div class="space-y-2.5 font-mono">
+              <!-- Address Bus -->
+              <div id="bus-card-address" class="rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 transition-all">
+                <div class="flex items-center justify-between text-xs mb-1.5">
+                  <span class="font-bold text-cyan-600 dark:text-cyan-400 flex items-center gap-1.5">
+                    <i class="fa-solid fa-location-crosshairs"></i>Address Bus (MAR → RAM)
+                  </span>
+                  <span id="bus-val-address" class="px-2 py-0.5 rounded text-[11px] bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                    IDLE
+                  </span>
+                </div>
+                <div class="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden relative">
+                  <div id="bus-line-address" class="h-full w-full text-cyan-500 opacity-20 transition-opacity"></div>
+                </div>
+              </div>
+
+              <!-- Data Bus -->
+              <div id="bus-card-data" class="rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 transition-all">
+                <div class="flex items-center justify-between text-xs mb-1.5">
+                  <span class="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                    <i class="fa-solid fa-arrows-left-right"></i>Data Bus (MDR ↔ RAM)
+                  </span>
+                  <span id="bus-val-data" class="px-2 py-0.5 rounded text-[11px] bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                    IDLE
+                  </span>
+                </div>
+                <div class="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden relative">
+                  <div id="bus-line-data" class="h-full w-full text-emerald-500 opacity-20 transition-opacity"></div>
+                </div>
+              </div>
+
+              <!-- Control Bus -->
+              <div id="bus-card-control" class="rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 transition-all">
+                <div class="flex items-center justify-between text-xs mb-1.5">
+                  <span class="font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                    <i class="fa-solid fa-bolt"></i>Control Bus (CU → RAM)
+                  </span>
+                  <span id="bus-val-control" class="px-2 py-0.5 rounded text-[11px] bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                    IDLE
+                  </span>
+                </div>
+                <div class="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden relative">
+                  <div id="bus-line-control" class="h-full w-full text-amber-500 opacity-20 transition-opacity"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ==================== RIGHT COLUMN: 16-CELL RAM GRID (4 COLS) ==================== -->
+        <div class="lg:col-span-4 space-y-4">
+          <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <h2 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <i class="fa-solid fa-memory text-emerald-500"></i>
+                  <span>Main Memory (RAM — 16 Cells)</span>
+                </h2>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                  Shared Von Neumann memory for instructions &amp; data. Click any cell to edit live.
+                </p>
+              </div>
+              <button id="btn-toggle-binary-addr" class="px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition">
+                Addr: DEC / BIN
+              </button>
+            </div>
+
+            <!-- Pointer Legend -->
+            <div class="flex items-center gap-3 text-[11px] font-mono pb-1">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30">
+                ← PC (Next Instruction)
+              </span>
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                ← MAR (Active Target)
+              </span>
+            </div>
+
+            <!-- 16-Cell Grid (2 columns of 8 cells or 16 clean cards) -->
+            <div id="ram-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <!-- Populated dynamically by JS -->
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ==================== PART 2: BEYOND ONE INSTRUCTION (CACHE, CORES, PIPELINE) ==================== -->
+    <section id="beyond-section" class="pt-6 border-t border-slate-200 dark:border-slate-800 space-y-6">
+      <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <span class="text-xs font-mono font-bold uppercase tracking-widest text-cyan-600 dark:text-cyan-400">
+            Part 2 • Companion Hardware Labs
+          </span>
+          <h2 class="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white mt-1">
+            Beyond One Instruction: Memory Hierarchy, Multi-Core &amp; Pipelining
+          </h2>
+          <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+            Explore how modern processors overcome the Von Neumann bottleneck using inclusive LRU caches, parallel cores, and instruction pipelines.
+          </p>
+        </div>
+
+        <!-- Lab Switcher Tabs (Show All or Filter) -->
+        <div class="flex flex-wrap gap-1.5 bg-slate-200/70 dark:bg-slate-900 p-1 rounded-xl border border-slate-300/60 dark:border-slate-800">
+          <button data-lab-tab="all" class="lab-tab-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm transition">
+            Show All 3 Labs
+          </button>
+          <button data-lab-tab="cache" class="lab-tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition">
+            1. Cache Hierarchy
+          </button>
+          <button data-lab-tab="cores" class="lab-tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition">
+            2. Multi-Core &amp; GPU
+          </button>
+          <button data-lab-tab="pipeline" class="lab-tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition">
+            3. 4-Stage Pipeline
+          </button>
+        </div>
+      </div>
+
+      <!-- ==================== ACTIVITY 1: MEMORY HIERARCHY (INCLUSIVE LRU CACHE) ==================== -->
+      <div id="lab-card-cache" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-5">
+        <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30">
+                Activity 1
+              </span>
+              <h3 class="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                Memory Hierarchy — Follow a Read (Fully Associative Inclusive Cache with LRU)
+              </h3>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-3xl">
+              Checking starts at <strong>L1</strong> (+1 cost) → <strong>L2</strong> (+3 cost) → <strong>L3</strong> (+8 cost) → <strong>RAM</strong> (+25 cost) only on a MISS. A HIT supplies the value immediately, moves the entry to the <strong>MRU (Most Recently Used)</strong> front of each checked cache, and copies it into any cache level that missed. <strong>Inclusive eviction rule:</strong> When a larger cache evicts its LRU entry, any copy in smaller caches is removed too.
+            </p>
+          </div>
+
+          <!-- Read Address Buttons -->
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="text-xs font-mono font-semibold text-slate-500 dark:text-slate-400 mr-1">Read Address:</span>
+            <div id="cache-read-buttons" class="flex flex-wrap gap-1.5">
+              <!-- [0]..[7] populated by JS -->
+            </div>
+            <button id="btn-cache-demo" class="ml-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-300 border border-amber-500/30 transition" title="Read a sequence demonstrating Misses, Hits, and Inclusive Eviction">
+              Locality Demo
+            </button>
+            <button id="btn-cache-reset" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition">
+              Reset Cache
+            </button>
+          </div>
+        </div>
+
+        <!-- Cache Status Trace & Cost Banner -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
+          <div id="cache-narrator" class="lg:col-span-8 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs sm:text-sm font-mono text-slate-700 dark:text-slate-200">
+            Click any address <strong>[0]–[7]</strong> above to trace a memory read through L1, L2, L3, and RAM.
+          </div>
+          <div class="lg:col-span-4 grid grid-cols-3 gap-2 text-center">
+            <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+              <div class="text-[10px] font-mono uppercase text-slate-400">Last Read Cost</div>
+              <div id="cache-last-cost" class="text-lg font-mono font-extrabold text-cyan-600 dark:text-cyan-400">0</div>
+            </div>
+            <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+              <div class="text-[10px] font-mono uppercase text-slate-400">Total Cost</div>
+              <div id="cache-total-cost" class="text-lg font-mono font-extrabold text-amber-600 dark:text-amber-400">0</div>
+            </div>
+            <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+              <div class="text-[10px] font-mono uppercase text-slate-400">Cache Hit Rate</div>
+              <div id="cache-hit-rate" class="text-lg font-mono font-extrabold text-emerald-600 dark:text-emerald-400">0%</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Visual Cache Hierarchy Levels -->
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          <!-- L1 Cache (2 entries, cost +1) -->
+          <div id="cache-box-L1" class="rounded-xl bg-slate-50 dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-800 p-3.5 space-y-2.5 transition-all">
+            <div class="flex items-center justify-between">
+              <div>
+                <h4 class="text-xs font-bold font-mono text-cyan-600 dark:text-cyan-400">L1 CACHE (2 Slots)</h4>
+                <p class="text-[11px] text-slate-500">Lookup Cost: <strong>+1 cycle</strong></p>
+              </div>
+              <span id="cache-badge-L1" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-200 dark:bg-slate-800 text-slate-500">IDLE</span>
+            </div>
+            <div class="text-[10px] font-mono text-slate-400 flex justify-between">
+              <span>← MRU (Newest)</span>
+              <span>LRU (Oldest) →</span>
+            </div>
+            <div id="cache-slots-L1" class="grid grid-cols-2 gap-2"></div>
+          </div>
+
+          <!-- L2 Cache (4 entries, cost +3) -->
+          <div id="cache-box-L2" class="rounded-xl bg-slate-50 dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-800 p-3.5 space-y-2.5 transition-all">
+            <div class="flex items-center justify-between">
+              <div>
+                <h4 class="text-xs font-bold font-mono text-amber-600 dark:text-amber-400">L2 CACHE (4 Slots)</h4>
+                <p class="text-[11px] text-slate-500">Lookup Cost: <strong>+3 cycles</strong></p>
+              </div>
+              <span id="cache-badge-L2" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-200 dark:bg-slate-800 text-slate-500">IDLE</span>
+            </div>
+            <div class="text-[10px] font-mono text-slate-400 flex justify-between">
+              <span>← MRU (Newest)</span>
+              <span>LRU (Oldest) →</span>
+            </div>
+            <div id="cache-slots-L2" class="grid grid-cols-2 sm:grid-cols-4 gap-2"></div>
+          </div>
+
+          <!-- L3 Cache (6 entries, cost +8) -->
+          <div id="cache-box-L3" class="rounded-xl bg-slate-50 dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-800 p-3.5 space-y-2.5 transition-all">
+            <div class="flex items-center justify-between">
+              <div>
+                <h4 class="text-xs font-bold font-mono text-purple-600 dark:text-purple-400">L3 CACHE (6 Slots)</h4>
+                <p class="text-[11px] text-slate-500">Lookup Cost: <strong>+8 cycles</strong></p>
+              </div>
+              <span id="cache-badge-L3" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-200 dark:bg-slate-800 text-slate-500">IDLE</span>
+            </div>
+            <div class="text-[10px] font-mono text-slate-400 flex justify-between">
+              <span>← MRU (Newest)</span>
+              <span>LRU (Oldest) →</span>
+            </div>
+            <div id="cache-slots-L3" class="grid grid-cols-3 gap-2"></div>
+          </div>
+
+          <!-- Main Memory (RAM 8 addresses, cost +25) -->
+          <div id="cache-box-RAM" class="rounded-xl bg-slate-50 dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-800 p-3.5 space-y-2.5 transition-all">
+            <div class="flex items-center justify-between">
+              <div>
+                <h4 class="text-xs font-bold font-mono text-emerald-600 dark:text-emerald-400">MAIN MEMORY (RAM)</h4>
+                <p class="text-[11px] text-slate-500">Lookup Cost: <strong>+25 cycles</strong></p>
+              </div>
+              <span id="cache-badge-RAM" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-200 dark:bg-slate-800 text-slate-500">IDLE</span>
+            </div>
+            <div class="text-[10px] font-mono text-slate-400">8 Backing Store Addresses [0]–[7]</div>
+            <div id="cache-slots-RAM" class="grid grid-cols-4 gap-1.5"></div>
+          </div>
+        </div>
+
+        <!-- Registers vs RAM vs ROM Architectural Note -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+          <div class="p-3 rounded-xl bg-slate-100/70 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-xs">
+            <strong class="text-cyan-600 dark:text-cyan-400 font-mono block mb-0.5">CPU Registers &amp; SRAM Cache</strong>
+            Fastest, smallest storage built directly inside the CPU die. Volatile; holds immediate operands and recently accessed lines.
+          </div>
+          <div class="p-3 rounded-xl bg-slate-100/70 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-xs">
+            <strong class="text-emerald-600 dark:text-emerald-400 font-mono block mb-0.5">Main Memory (DRAM)</strong>
+            Holds active programs and data currently running. Volatile (clears on power off), much larger capacity, higher latency (+25).
+          </div>
+          <div class="p-3 rounded-xl bg-slate-100/70 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-xs">
+            <strong class="text-amber-600 dark:text-amber-400 font-mono block mb-0.5">ROM / Non-Volatile Firmware</strong>
+            Read-Only Memory retains bootloaders (BIOS/UEFI) without power so the CPU has initial instructions upon startup.
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== ACTIVITY 2: INDEPENDENT CORES — SHARE THE WORK ==================== -->
+      <div id="lab-card-cores" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-5">
+        <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                Activity 2
+              </span>
+              <h3 class="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                Independent Cores — Share the Work (1-Core vs. 2-Core Machine &amp; Where a GPU Fits)
+              </h3>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-3xl">
+              Both machines square the same six independent inputs: <code class="font-mono text-cyan-500">2, 3, 4, 5, 6, 7</code> (producing <code class="font-mono text-emerald-500">4, 9, 16, 25, 36, 49</code>). Each task takes <strong>2 work units</strong> on one core. Watch how independent tasks scale across cores.
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button id="btn-cores-step" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-sm transition flex items-center gap-1.5">
+              <i class="fa-solid fa-forward-step"></i>
+              <span>Step Both Machines</span>
+            </button>
+            <button id="btn-cores-auto" class="px-3 py-2 rounded-xl text-xs font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-300 border border-amber-500/30 transition">
+              Auto-Step
+            </button>
+            <button id="btn-cores-reset" class="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition">
+              Reset Cores
+            </button>
+          </div>
+        </div>
+
+        <!-- Single-Core vs Dual-Core Side-by-Side Comparison -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <!-- 1-Core Machine -->
+          <div class="rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <h4 class="text-sm font-bold text-slate-900 dark:text-white">1-Core Machine (Sequential)</h4>
+                <p class="text-[11px] text-slate-500">1 core executes all 6 tasks one after another (12 steps total)</p>
+              </div>
+              <span id="single-core-status" class="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30">
+                Step 0 / 12
+              </span>
+            </div>
+            <div id="single-core-active" class="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-600 dark:text-slate-300">
+              Core 0: Ready
+            </div>
+            <div id="single-core-tasks" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
+          </div>
+
+          <!-- 2-Core Machine -->
+          <div class="rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <h4 class="text-sm font-bold text-slate-900 dark:text-white">2-Core Machine (Parallel)</h4>
+                <p class="text-[11px] text-slate-500">Core 0 &amp; Core 1 work simultaneously (Finishes in 6 steps!)</p>
+              </div>
+              <span id="dual-core-status" class="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                Step 0 / 6
+              </span>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div id="dual-core-0-active" class="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono text-cyan-600 dark:text-cyan-400">
+                Core 0: Ready
+              </div>
+              <div id="dual-core-1-active" class="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono text-emerald-600 dark:text-emerald-400">
+                Core 1: Ready
+              </div>
+            </div>
+            <div id="dual-core-tasks" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
+          </div>
+        </div>
+
+        <!-- Where a GPU Fits Card -->
+        <div class="p-4 rounded-xl bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-rose-500/10 border border-indigo-500/25 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div class="space-y-1">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-300 flex items-center gap-1.5">
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+              <span>Where a GPU Fits (SIMT / Massive Data Parallelism)</span>
+            </h4>
+            <p class="text-xs text-slate-600 dark:text-slate-300 max-w-4xl">
+              While a CPU has a handful of complex cores optimized for sequential branching and low latency, a <strong>GPU</strong> contains hundreds or thousands of simpler ALUs executing the <em>same instruction across many data elements simultaneously</em>. Because squaring <code class="font-mono">2, 3, 4, 5, 6, 7</code> has zero data dependencies between elements, a GPU dispatches all 6 elements in parallel and finishes the entire batch in just <strong>2 steps</strong>!
+            </p>
+          </div>
+          <div class="shrink-0 px-3 py-2 rounded-xl bg-slate-900 text-white font-mono text-xs border border-indigo-500/40 text-center">
+            <div class="text-[10px] text-indigo-300 uppercase">6-Lane GPU SIMD</div>
+            <div class="font-bold text-sm text-emerald-400">All 6 Done in 2 Steps</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== ACTIVITY 3: FOUR-STAGE INSTRUCTION PIPELINE ==================== -->
+      <div id="lab-card-pipeline" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-5">
+        <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                Activity 3
+              </span>
+              <h3 class="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                Four-Stage Instruction Pipeline (Sequential vs. 4-Stage Pipelined Execution)
+              </h3>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-3xl">
+              Compare running 5 instructions (<code class="font-mono">LDA 5, ADD 6, STA 7, OUT, HLT</code>) across 4 hardware stages:
+              <span class="font-mono text-cyan-500 font-semibold">F (Fetch)</span>,
+              <span class="font-mono text-amber-500 font-semibold">D (Decode)</span>,
+              <span class="font-mono text-emerald-500 font-semibold">E (Execute)</span>, and
+              <span class="font-mono text-purple-500 font-semibold">W (Write-back)</span>.
+              Without pipelining takes <strong>20 clock cycles</strong>; overlapping stages in a 4-stage pipeline finishes all 5 instructions in <strong>8 clock cycles</strong>!
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button id="btn-pipe-step" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-sm transition flex items-center gap-1.5">
+              <i class="fa-solid fa-clock"></i>
+              <span>Step Clock Cycle</span>
+            </button>
+            <button id="btn-pipe-auto" class="px-3 py-2 rounded-xl text-xs font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-300 border border-amber-500/30 transition">
+              Auto-Run Clock
+            </button>
+            <button id="btn-pipe-reset" class="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition">
+              Reset Pipeline
+            </button>
+          </div>
+        </div>
+
+        <!-- Pipeline Summary Bar -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <span class="text-xs font-semibold text-slate-500">Current Clock Cycle</span>
+            <span id="pipe-cycle-badge" class="text-lg font-mono font-extrabold text-cyan-600 dark:text-cyan-400">Cycle 0 / 20</span>
+          </div>
+          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <span class="text-xs font-semibold text-slate-500">Unpipelined Completed</span>
+            <span id="pipe-seq-done" class="text-lg font-mono font-extrabold text-amber-600 dark:text-amber-400">0 / 5 (20 cyc)</span>
+          </div>
+          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <span class="text-xs font-semibold text-slate-500">Pipelined Completed</span>
+            <span id="pipe-ovl-done" class="text-lg font-mono font-extrabold text-emerald-600 dark:text-emerald-400">0 / 5 (8 cyc)</span>
+          </div>
+        </div>
+
+        <!-- Side-by-Side Timeline Grids -->
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <!-- Without Pipelining -->
+          <div class="rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-4 space-y-3 overflow-x-auto">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                Without Pipelining (1 Instruction Active at a Time — 20 Cycles)
+              </h4>
+              <span id="pipe-seq-state" class="text-[11px] font-mono text-slate-400">Waiting...</span>
+            </div>
+            <div id="pipe-grid-seq" class="min-w-[540px]"></div>
+          </div>
+
+          <!-- With 4-Stage Pipelining -->
+          <div class="rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-4 space-y-3 overflow-x-auto">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                With 4-Stage Pipelining (Overlapped Stages — Finishes in 8 Cycles!)
+              </h4>
+              <span id="pipe-ovl-state" class="text-[11px] font-mono text-emerald-400">Waiting...</span>
+            </div>
+            <div id="pipe-grid-ovl" class="min-w-[540px]"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== MODAL 1: INSTRUCTION SET ARCHITECTURE (ISA) REFERENCE ==================== -->
+  <div id="isa-modal" class="fixed inset-0 z-50 hidden bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden shadow-2xl flex flex-col">
+      <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <i class="fa-solid fa-book-open text-indigo-500"></i>
+          <h3 class="text-base font-bold text-slate-900 dark:text-white">Instruction Set Architecture (ISA) Reference</h3>
+        </div>
+        <button id="btn-close-isa" class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white flex items-center justify-center">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div class="p-5 overflow-y-auto space-y-4 text-xs">
+        <p class="text-slate-600 dark:text-slate-300">
+          This simulator uses the classic <strong>Little Man Computer (LMC) / Von Neumann</strong> assembly language. Labels (such as <code class="font-mono text-cyan-500">LOOP</code> or <code class="font-mono text-cyan-500">ONE DAT 1</code>) and explicit address prefixes (like <code class="font-mono text-cyan-500">6: DAT 25</code>) are supported.
+        </p>
+        <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-100 dark:bg-slate-950 text-slate-700 dark:text-slate-300 font-mono text-[11px] uppercase">
+                <th class="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">Mnemonic</th>
+                <th class="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">Name</th>
+                <th class="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">RTL / Micro-Operation</th>
+                <th class="py-2.5 px-3 border-b border-slate-200 dark:border-slate-800">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200 dark:divide-slate-800 font-mono">
+              <tr>
+                <td class="py-2 px-3 font-bold text-cyan-600 dark:text-cyan-400">INP</td>
+                <td class="py-2 px-3 font-sans">Input</td>
+                <td class="py-2 px-3 text-emerald-500">AC ← InputQueue</td>
+                <td class="py-2 px-3 font-sans text-slate-600 dark:text-slate-300">Reads next number from the Input Stream into Accumulator (AC).</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3 font-bold text-cyan-600 dark:text-cyan-400">OUT</td>
+                <td class="py-2 px-3 font-sans">Output</td>
+                <td class="py-2 px-3 text-emerald-500">Output ← [AC]</td>
+                <td class="py-2 px-3 font-sans text-slate-600 dark:text-slate-300">Emits the current value of AC to the Output Tape.</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3 font-bold text-cyan-600 dark:text-cyan-400">LDA x</td>
+                <td class="py-2 px-3 font-sans">Load into AC</td>
+                <td class="py-2 px-3 text-emerald-500">MAR ← x; MDR ← RAM[x]; AC ← [MDR]</td>
+                <td class="py-2 px-3 font-sans text-slate-600 dark:text-slate-300">Loads the value stored at RAM address <code class="font-mono">x</code> into AC.</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3 font-bold text-cyan-600 dark:text-cyan-400">STA x</td>
+                <td class="py-2 px-3 font-sans">Store from AC</td>
+                <td class="py-2 px-3 text-emerald-500">MAR ← x; MDR ← [AC]; RAM[x] ← [MDR]</td>
+                <td class="py-2 px-3 font-sans text-slate-600 dark:text-slate-300">Writes the value in AC into RAM address <code class="font-mono">x</code>.</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3 font-bold text-cyan-600 dark:text-cyan-400">ADD x</td>
+                <td class="py-2 px-3 font-sans">Add</td>
+                <td class="py-2 px-3 text-emerald-500">MAR ← x; MDR ← RAM[x]; AC ← [AC] + [MDR]</td>
+                <td class="py-2 px-3 font-sans text-slate-600 dark:text-slate-300">Adds the value at RAM address <code class="font-mono">x</code> to AC.</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3 font-bold text-cyan-600 dark:text-cyan-400">SUB x</td>
+                <td class="py-2 px-3 font-sans">Subtract</td>
+                <td class="py-2 px-3 text-emerald-500">MAR ← x; MDR ← RAM[x]; AC ← [AC] - [MDR]</td>
+                <td class="py-2 px-3 font-sans text-slate-600 dark:text-slate-300">Subtracts the value at RAM address <code class="font-mono">x</code> from AC.</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3 font-bold text-cyan-600 dark:text-cyan-400">BRA x</td>
+                <td class="py-2 px-3 font-sans">Branch Always</td>
+                <td class="py-2 px-3 text-emerald-500">PC ← x</td>
+                <td class="py-2 px-3 font-sans text-slate-600 dark:text-slate-300">Unconditionally sets PC to address <code class="font-mono">x</code>.</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3 font-bold text-cyan-600 dark:text-cyan-400">BRZ x</td>
+                <td class="py-2 px-3 font-sans">Branch if Zero</td>
+                <td class="py-2 px-3 text-emerald-500">if (AC == 0) PC ← x</td>
+                <td class="py-2 px-3 font-sans text-slate-600 dark:text-slate-300">Branches to address <code class="font-mono">x</code> if AC is equal to 0.</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3 font-bold text-cyan-600 dark:text-cyan-400">BRP x</td>
+                <td class="py-2 px-3 font-sans">Branch if Zero/Positive</td>
+                <td class="py-2 px-3 text-emerald-500">if (AC ≥ 0) PC ← x</td>
+                <td class="py-2 px-3 font-sans text-slate-600 dark:text-slate-300">Branches to address <code class="font-mono">x</code> if AC is zero or positive.</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3 font-bold text-cyan-600 dark:text-cyan-400">HLT</td>
+                <td class="py-2 px-3 font-sans">Halt</td>
+                <td class="py-2 px-3 text-rose-500">STATE ← HALTED</td>
+                <td class="py-2 px-3 font-sans text-slate-600 dark:text-slate-300">Stops instruction execution.</td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3 font-bold text-cyan-600 dark:text-cyan-400">DAT v</td>
+                <td class="py-2 px-3 font-sans">Data Location</td>
+                <td class="py-2 px-3 text-amber-500">RAM[here] = v</td>
+                <td class="py-2 px-3 font-sans text-slate-600 dark:text-slate-300">Reserves a RAM address initialized to integer <code class="font-mono">v</code> (default 0).</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==================== FOOTER ==================== -->
+  <footer class="border-t border-slate-200 dark:border-slate-800/80 py-4 px-6 text-center text-xs text-slate-500 dark:text-slate-400 mt-8">
+    Interactive CPU Architecture &amp; Fetch–Decode–Execute (FDE) Simulator • Built for Computer Architecture Education &amp; GitHub Technical Blogs
+  </footer>
+
+  <!-- ==================== APPLICATION LOGIC ==================== -->
+  <script>
+    /*************************************************************************
+     * PART 1: VON NEUMANN / LMC CPU & FETCH-DECODE-EXECUTE SIMULATOR
+     *************************************************************************/
+
+    const PRESET_PROGRAMS = {
+      add_two: {
+        name: 'Starter: Add Two Numbers',
+        inputs: '12, 8',
+        code: [
+          'LDA 6      ; Load value at RAM[6] into AC',
+          'ADD 7      ; Add value at RAM[7] to AC',
+          'OUT        ; Send result in AC to Output Tape',
+          'HLT        ; Halt CPU execution',
+          'DAT 0      ; Unused padding at [4]',
+          'DAT 0      ; Unused padding at [5]',
+          'DAT 25     ; First number at RAM[6]',
+          'DAT 17     ; Second number at RAM[7]'
+        ].join('\n')
+      },
+      add_inputs: {
+        name: 'Add Two Inputs (uses INP)',
+        inputs: '12, 8',
+        code: [
+          'INP        ; Read 1st number from Input Stream into AC',
+          'STA 7      ; Store 1st number at RAM[7]',
+          'INP        ; Read 2nd number from Input Stream into AC',
+          'ADD 7      ; Add 1st number (RAM[7]) to AC',
+          'OUT        ; Output the sum',
+          'HLT        ; Halt execution',
+          'DAT 0',
+          'DAT 0      ; Temporary storage slot at RAM[7]'
+        ].join('\n')
+      },
+      countdown: {
+        name: 'Countdown Loop (BRZ / BRP)',
+        inputs: '3',
+        code: [
+          'INP        ; Read starting countdown value',
+          'LOOP OUT   ; Output current AC value (Addr 1)',
+          'SUB ONE    ; Subtract 1 from AC',
+          'BRP LOOP   ; If AC >= 0, branch back to LOOP (Addr 1)',
+          'HLT        ; Stop when AC becomes negative',
+          'ONE DAT 1  ; Constant 1 stored at RAM[5]'
+        ].join('\n')
+      },
+      max_two: {
+        name: 'Compare & Max of Two Inputs',
+        inputs: '19, 34',
+        code: [
+          'INP        ; Read first input A',
+          'STA A      ; Store A in memory',
+          'INP        ; Read second input B',
+          'STA B      ; Store B in memory',
+          'SUB A      ; Compute B - A in AC',
+          'BRP B_MAX  ; If B - A >= 0, B is larger or equal',
+          'LDA A      ; Otherwise A is larger: load A',
+          'OUT        ; Output A',
+          'HLT        ; Stop',
+          'B_MAX LDA B; Load B',
+          'OUT        ; Output B',
+          'HLT        ; Stop',
+          'A DAT 0    ; Storage for A',
+          'B DAT 0    ; Storage for B'
+        ].join('\n')
+      }
+    };
+
+    const VALID_OPCODES = new Set(['INP', 'OUT', 'LDA', 'STA', 'ADD', 'SUB', 'BRA', 'BRZ', 'BRP', 'HLT', 'DAT']);
+    const OPERAND_OPCODES = new Set(['LDA', 'STA', 'ADD', 'SUB', 'BRA', 'BRZ', 'BRP']);
+
+    // CPU & Memory State
+    const cpuState = {
+      ram: Array.from({ length: 16 }, (_, idx) => ({
+        addr: idx,
+        label: '',
+        raw: 'DAT 0',
+        type: 'DATA', // 'INSTR' | 'DATA'
+        opcode: 'DAT',
+        operand: 0,
+        value: 0
+      })),
+      registers: {
+        PC: { current: 0, prev: null },
+        MAR: { current: null, prev: null },
+        MDR: { current: null, prev: null },
+        IR: { current: null, prev: null },
+        AC: { current: 0, prev: null }
+      },
+      activeRegHighlights: {}, // { PC: 'read' | 'write' | 'decode', ... }
+      activeRamHighlight: null, // { addr: number, mode: 'read' | 'write' }
+      buses: {
+        address: { active: false, value: 'IDLE', dir: 'right' },
+        data: { active: false, value: 'IDLE', dir: 'left' },
+        control: { active: false, value: 'IDLE', dir: 'right' }
+      },
+      cu: { opcode: 'IDLE', detail: 'Awaiting instruction in IR' },
+      alu: { op: 'IDLE' },
+      phase: 'IDLE', // 'IDLE' | 'FETCH' | 'DECODE' | 'EXECUTE' | 'HALTED' | 'AWAIT_INPUT'
+      microStepQueue: [],
+      currentMicroLabel: 'IDLE',
+      currentRtl: 'READY',
+      narratorText: 'Program assembled into RAM. Click Step Micro-Op (FDE) to begin.',
+      instructionsCompleted: 0,
+      microStepsCompleted: 0,
+      inputQueue: [12, 8],
+      inputIndex: 0,
+      outputs: [],
+      binaryAddressMode: false,
+      autoRunTimer: null,
+      speedLevel: 3
+    };
+
+    const SPEED_MAP = {
+      1: { label: '0.5x', ms: 1300 },
+      2: { label: '1.0x', ms: 850 },
+      3: { label: '1.5x', ms: 550 },
+      4: { label: '2.5x', ms: 320 },
+      5: { label: '4.0x', ms: 170 }
+    };
+
+    /**
+     * Parse and Assemble 16-cell LMC Assembly Program
+     */
+    function parseAssemblyProgram(sourceText) {
+      const rawLines = sourceText.split(/\r?\n/);
+      const errors = [];
+      const parsedItems = [];
+      const symbolTable = {};
+
+      let nextAddr = 0;
+
+      // Pass 1: Tokenize & Collect Labels
+      rawLines.forEach((line, lineIdx) => {
+        // Strip comments (; or # or //)
+        const clean = line.replace(/(;|#|\/\/).*$/, '').trim();
+        if (!clean) return;
+
+        let addr = nextAddr;
+        let rest = clean;
+
+        // Optional explicit address prefix like "6: DAT 25"
+        const addrMatch = rest.match(/^(\d+)\s*:\s*(.*)$/);
+        if (addrMatch) {
+          addr = parseInt(addrMatch[1], 10);
+          rest = addrMatch[2].trim();
+        }
+
+        if (addr < 0 || addr > 15) {
+          errors.push(`Line ${lineIdx + 1}: Address ${addr} exceeds 16-cell RAM range (0–15).`);
+          return;
+        }
+
+        const tokens = rest.split(/\s+/);
+        if (tokens.length === 0 || !tokens[0]) return;
+
+        let label = '';
+        let opcode = tokens[0].toUpperCase();
+        let operandToken = tokens.slice(1).join(' ');
+
+        if (!VALID_OPCODES.has(opcode)) {
+          // First token is a label
+          label = tokens[0].toUpperCase();
+          if (!/^[A-Z_][A-Z0-9_]*$/.test(label)) {
+            errors.push(`Line ${lineIdx + 1}: Invalid label or opcode "${tokens[0]}".`);
+            return;
+          }
+          symbolTable[label] = addr;
+          if (tokens.length < 2) {
+            errors.push(`Line ${lineIdx + 1}: Label "${label}" must be followed by an instruction or DAT.`);
+            return;
+          }
+          opcode = tokens[1].toUpperCase();
+          operandToken = tokens.slice(2).join(' ');
+        }
+
+        if (!VALID_OPCODES.has(opcode)) {
+          errors.push(`Line ${lineIdx + 1}: Unknown opcode "${opcode}".`);
+          return;
+        }
+
+        parsedItems.push({
+          lineNumber: lineIdx + 1,
+          addr,
+          label,
+          opcode,
+          operandToken: operandToken.trim()
+        });
+
+        nextAddr = addr + 1;
+      });
+
+      // Pass 2: Resolve Operands & Build 16-Cell Image
+      const cells = Array.from({ length: 16 }, (_, idx) => ({
+        addr: idx,
+        label: '',
+        raw: 'DAT 0',
+        type: 'DATA',
+        opcode: 'DAT',
+        operand: 0,
+        value: 0
+      }));
+
+      parsedItems.forEach((item) => {
+        const { lineNumber, addr, label, opcode, operandToken } = item;
+
+        if (opcode === 'DAT') {
+          let val = 0;
+          if (operandToken !== '') {
+            if (/^-?\d+$/.test(operandToken)) {
+              val = parseInt(operandToken, 10);
+            } else if (symbolTable[operandToken.toUpperCase()] !== undefined) {
+              val = symbolTable[operandToken.toUpperCase()];
+            } else {
+              errors.push(`Line ${lineNumber}: DAT value "${operandToken}" is not a valid integer.`);
+              return;
+            }
+          }
+          cells[addr] = {
+            addr,
+            label,
+            raw: `DAT ${val}`,
+            type: 'DATA',
+            opcode: 'DAT',
+            operand: val,
+            value: val
+          };
+        } else if (OPERAND_OPCODES.has(opcode)) {
+          if (!operandToken) {
+            errors.push(`Line ${lineNumber}: Opcode "${opcode}" requires a target address or label.`);
+            return;
+          }
+          let targetAddr = null;
+          if (/^\d+$/.test(operandToken)) {
+            targetAddr = parseInt(operandToken, 10);
+          } else {
+            const sym = operandToken.toUpperCase();
+            if (symbolTable[sym] !== undefined) {
+              targetAddr = symbolTable[sym];
+            } else {
+              errors.push(`Line ${lineNumber}: Undefined label or invalid address "${operandToken}".`);
+              return;
+            }
+          }
+          if (targetAddr < 0 || targetAddr > 15) {
+            errors.push(`Line ${lineNumber}: Target address ${targetAddr} out of bounds (0–15).`);
+            return;
+          }
+          cells[addr] = {
+            addr,
+            label,
+            raw: `${opcode} ${targetAddr}`,
+            type: 'INSTR',
+            opcode,
+            operand: targetAddr,
+            value: 0
+          };
+        } else {
+          // INP, OUT, HLT
+          if (operandToken) {
+            errors.push(`Line ${lineNumber}: Opcode "${opcode}" does not take an operand.`);
+            return;
+          }
+          cells[addr] = {
+            addr,
+            label,
+            raw: opcode,
+            type: 'INSTR',
+            opcode,
+            operand: null,
+            value: 0
+          };
+        }
+      });
+
+      return { errors, cells };
+    }
+
+    /**
+     * Helper to write a register and record its "Before last write" value
+     */
+    function writeRegister(regName, newValue, highlightMode = 'write') {
+      const reg = cpuState.registers[regName];
+      reg.prev = reg.current === null ? '—' : String(reg.current);
+      reg.current = newValue;
+      cpuState.activeRegHighlights[regName] = highlightMode;
+    }
+
+    function markRegisterRead(regName) {
+      if (!cpuState.activeRegHighlights[regName]) {
+        cpuState.activeRegHighlights[regName] = 'read';
+      }
+    }
+
+    function clearStepVisuals() {
+      cpuState.activeRegHighlights = {};
+      cpuState.activeRamHighlight = null;
+      cpuState.buses.address = { active: false, value: 'IDLE', dir: 'right' };
+      cpuState.buses.data = { active: false, value: 'IDLE', dir: 'left' };
+      cpuState.buses.control = { active: false, value: 'IDLE', dir: 'right' };
+    }
+
+    /**
+     * Format RAM cell display string
+     */
+    function formatRamCellDisplay(cell) {
+      if (cell.type === 'INSTR') {
+        return cell.raw;
+      }
+      return String(cell.value);
+    }
+
+    /**
+     * Build the Micro-Step Queue for the next complete instruction (Fetch -> Decode -> Execute)
+     */
+    function buildInstructionMicroSteps() {
+      const steps = [];
+
+      // FETCH 1: MAR <- [PC]
+      steps.push({
+        phase: 'FETCH',
+        label: 'FETCH 1',
+        rtl: 'MAR ← [PC]',
+        run() {
+          clearStepVisuals();
+          const pcVal = cpuState.registers.PC.current;
+          if (pcVal < 0 || pcVal > 15) {
+            cpuState.phase = 'HALTED';
+            cpuState.currentMicroLabel = 'HALTED';
+            cpuState.narratorText = `Execution stopped: PC (${pcVal}) reached end of 16-cell RAM.`;
+            return;
+          }
+          markRegisterRead('PC');
+          writeRegister('MAR', pcVal, 'write');
+          cpuState.cu = { opcode: 'FETCH', detail: `Copying PC (${pcVal}) to MAR` };
+          cpuState.alu = { op: 'IDLE' };
+          cpuState.narratorText = `FETCH 1: Program Counter (PC = ${pcVal}) copies the address of the next instruction into MAR via the internal CPU bus.`;
+        }
+      });
+
+      // FETCH 2: Control Bus = READ, Address Bus = MAR, MDR <- RAM[MAR], PC <- [PC] + 1
+      steps.push({
+        phase: 'FETCH',
+        label: 'FETCH 2',
+        rtl: 'MDR ← RAM[MAR]; PC ← [PC] + 1',
+        run() {
+          clearStepVisuals();
+          const marVal = cpuState.registers.MAR.current;
+          const pcVal = cpuState.registers.PC.current;
+          const cell = cpuState.ram[marVal];
+          const fetchedPayload = formatRamCellDisplay(cell);
+
+          markRegisterRead('MAR');
+          writeRegister('MDR', fetchedPayload, 'write');
+          writeRegister('PC', (pcVal + 1) % 16, 'write');
+
+          cpuState.activeRamHighlight = { addr: marVal, mode: 'read' };
+          cpuState.buses.address = { active: true, value: `Addr [${marVal}]`, dir: 'right' };
+          cpuState.buses.control = { active: true, value: 'MEM_READ', dir: 'right' };
+          cpuState.buses.data = { active: true, value: `← "${fetchedPayload}"`, dir: 'left' };
+          cpuState.cu = { opcode: 'FETCH', detail: `Reading RAM[${marVal}] & incrementing PC` };
+
+          cpuState.narratorText = `FETCH 2: Control Bus asserts READ; Address Bus sends MAR (${marVal}) to RAM; RAM[${marVal}] ("${fetchedPayload}") travels across the Data Bus into MDR; PC increments to ${(pcVal + 1) % 16}.`;
+        }
+      });
+
+      // FETCH 3: IR <- [MDR]
+      steps.push({
+        phase: 'FETCH',
+        label: 'FETCH 3',
+        rtl: 'IR ← [MDR]',
+        run() {
+          clearStepVisuals();
+          const mdrVal = cpuState.registers.MDR.current;
+          markRegisterRead('MDR');
+          writeRegister('IR', mdrVal, 'write');
+          cpuState.cu = { opcode: 'FETCH → IR', detail: `Loaded "${mdrVal}" into IR` };
+          cpuState.narratorText = `FETCH 3: MDR transfers the fetched instruction ("${mdrVal}") into the Instruction Register (IR) so the Control Unit can decode it.`;
+        }
+      });
+
+      // DECODE: Inspect IR and dynamically append Execute micro-steps
+      steps.push({
+        phase: 'DECODE',
+        label: 'DECODE',
+        rtl: 'CU ← Decode(IR)',
+        run() {
+          clearStepVisuals();
+          cpuState.activeRegHighlights.IR = 'decode';
+          const irText = String(cpuState.registers.IR.current || '').trim();
+
+          // Parse what is in IR (even if a numeric data cell was fetched)
+          const parts = irText.split(/\s+/);
+          const op = (parts[0] || '').toUpperCase();
+          const arg = parts[1] !== undefined ? parseInt(parts[1], 10) : null;
+
+          if (!VALID_OPCODES.has(op) || op === 'DAT') {
+            cpuState.cu = { opcode: `DATA (${irText})`, detail: 'Non-instruction data encountered → HALT' };
+            cpuState.narratorText = `DECODE: Control Unit inspected IR ("${irText}") and found raw data instead of an executable opcode. CPU will halt.`;
+            cpuState.microStepQueue.push({
+              phase: 'EXECUTE',
+              label: 'HALT',
+              rtl: 'STATE ← HALTED',
+              run() {
+                clearStepVisuals();
+                cpuState.phase = 'HALTED';
+                cpuState.currentMicroLabel = 'HALTED';
+                cpuState.narratorText = `HALTED: CPU stopped because address contained data ("${irText}").`;
+                stopAutoRun();
+              }
+            });
+            return;
+          }
+
+          cpuState.cu = {
+            opcode: op,
+            detail: arg !== null ? `Opcode: ${op} | Operand Addr: [${arg}]` : `Opcode: ${op} (Immediate/Implicit)`
+          };
+
+          // Explain Decode & enqueue exact Execute micro-steps for this opcode
+          switch (op) {
+            case 'LDA':
+              cpuState.narratorText = `DECODE: Control Unit decodes IR ("${irText}") → Load Accumulator (LDA) from RAM address [${arg}].`;
+              enqueueMemoryReadThenExecute(op, arg);
+              break;
+            case 'ADD':
+              cpuState.narratorText = `DECODE: Control Unit decodes IR ("${irText}") → Add RAM[${arg}] to Accumulator (AC).`;
+              enqueueMemoryReadThenExecute(op, arg);
+              break;
+            case 'SUB':
+              cpuState.narratorText = `DECODE: Control Unit decodes IR ("${irText}") → Subtract RAM[${arg}] from Accumulator (AC).`;
+              enqueueMemoryReadThenExecute(op, arg);
+              break;
+            case 'STA':
+              cpuState.narratorText = `DECODE: Control Unit decodes IR ("${irText}") → Store Accumulator (AC) value into RAM address [${arg}].`;
+              enqueueStoreExecute(arg);
+              break;
+            case 'INP':
+              cpuState.narratorText = `DECODE: Control Unit decodes IR ("INP") → Read next integer from the Input Stream into AC.`;
+              enqueueInputExecute();
+              break;
+            case 'OUT':
+              cpuState.narratorText = `DECODE: Control Unit decodes IR ("OUT") → Emit current Accumulator (AC = ${cpuState.registers.AC.current}) to Output Tape.`;
+              enqueueOutputExecute();
+              break;
+            case 'BRA':
+            case 'BRZ':
+            case 'BRP':
+              cpuState.narratorText = `DECODE: Control Unit decodes IR ("${irText}") → Evaluate branch condition (${op}) targeting RAM address [${arg}].`;
+              enqueueBranchExecute(op, arg);
+              break;
+            case 'HLT':
+              cpuState.narratorText = `DECODE: Control Unit decodes IR ("HLT") → Prepare to halt CPU clock.`;
+              cpuState.microStepQueue.push({
+                phase: 'EXECUTE',
+                label: 'EXECUTE (HLT)',
+                rtl: 'STATE ← HALTED',
+                isFinalInInstruction: true,
+                run() {
+                  clearStepVisuals();
+                  cpuState.phase = 'HALTED';
+                  cpuState.currentMicroLabel = 'HALTED';
+                  cpuState.cu = { opcode: 'HLT', detail: 'Processor clock halted' };
+                  cpuState.narratorText = `EXECUTE (HLT): CPU execution has cleanly halted. Reset CPU or Assemble to run again.`;
+                  stopAutoRun();
+                }
+              });
+              break;
+          }
+        }
+      });
+
+      return steps;
+    }
+
+    /**
+     * Enqueue Execute micro-steps for LDA x, ADD x, SUB x
+     */
+    function enqueueMemoryReadThenExecute(op, targetAddr) {
+      // EXECUTE 1: MAR <- operand
+      cpuState.microStepQueue.push({
+        phase: 'EXECUTE',
+        label: 'EXECUTE 1',
+        rtl: `MAR ← ${targetAddr}`,
+        run() {
+          clearStepVisuals();
+          markRegisterRead('IR');
+          writeRegister('MAR', targetAddr, 'write');
+          cpuState.cu = { opcode: op, detail: `Sending operand address [${targetAddr}] to MAR` };
+          cpuState.narratorText = `EXECUTE 1 (${op}): Control Unit places the operand address (${targetAddr}) from IR into MAR.`;
+        }
+      });
+
+      // EXECUTE 2: MDR <- RAM[MAR]
+      cpuState.microStepQueue.push({
+        phase: 'EXECUTE',
+        label: 'EXECUTE 2',
+        rtl: `MDR ← RAM[${targetAddr}]`,
+        run() {
+          clearStepVisuals();
+          const cell = cpuState.ram[targetAddr];
+          const numericVal = cell.type === 'DATA' ? Number(cell.value) : Number(cell.operand || 0);
+          markRegisterRead('MAR');
+          writeRegister('MDR', numericVal, 'write');
+          cpuState.activeRamHighlight = { addr: targetAddr, mode: 'read' };
+          cpuState.buses.address = { active: true, value: `Addr [${targetAddr}]`, dir: 'right' };
+          cpuState.buses.control = { active: true, value: 'MEM_READ', dir: 'right' };
+          cpuState.buses.data = { active: true, value: `← ${numericVal}`, dir: 'left' };
+          cpuState.cu = { opcode: op, detail: `Reading data at RAM[${targetAddr}] into MDR` };
+          cpuState.narratorText = `EXECUTE 2 (${op}): Control Bus sends READ; Address Bus selects RAM[${targetAddr}]; Data Bus delivers value (${numericVal}) into MDR.`;
+        }
+      });
+
+      // EXECUTE 3: Perform ALU/Register transfer into AC
+      cpuState.microStepQueue.push({
+        phase: 'EXECUTE',
+        label: 'EXECUTE 3',
+        rtl: op === 'LDA' ? 'AC ← [MDR]' : op === 'ADD' ? 'AC ← [AC] + [MDR]' : 'AC ← [AC] - [MDR]',
+        isFinalInInstruction: true,
+        run() {
+          clearStepVisuals();
+          const mdrNum = Number(cpuState.registers.MDR.current) || 0;
+          const oldAc = Number(cpuState.registers.AC.current) || 0;
+          markRegisterRead('MDR');
+
+          if (op === 'LDA') {
+            writeRegister('AC', mdrNum, 'write');
+            cpuState.alu = { op: 'PASS MDR → AC' };
+            cpuState.narratorText = `EXECUTE 3 (LDA): MDR (${mdrNum}) is loaded directly into the Accumulator (AC = ${mdrNum}). Instruction complete!`;
+          } else if (op === 'ADD') {
+            const res = oldAc + mdrNum;
+            markRegisterRead('AC');
+            writeRegister('AC', res, 'write');
+            cpuState.alu = { op: `${oldAc} + ${mdrNum} = ${res}` };
+            cpuState.narratorText = `EXECUTE 3 (ADD): ALU adds AC (${oldAc}) + MDR (${mdrNum}) = ${res}, storing the result in AC. Instruction complete!`;
+          } else if (op === 'SUB') {
+            const res = oldAc - mdrNum;
+            markRegisterRead('AC');
+            writeRegister('AC', res, 'write');
+            cpuState.alu = { op: `${oldAc} - ${mdrNum} = ${res}` };
+            cpuState.narratorText = `EXECUTE 3 (SUB): ALU subtracts AC (${oldAc}) - MDR (${mdrNum}) = ${res}, storing the result in AC. Instruction complete!`;
+          }
+        }
+      });
+    }
+
+    /**
+     * Enqueue Execute micro-steps for STA x
+     */
+    function enqueueStoreExecute(targetAddr) {
+      // EXECUTE 1: MAR <- x; MDR <- [AC]
+      cpuState.microStepQueue.push({
+        phase: 'EXECUTE',
+        label: 'EXECUTE 1',
+        rtl: `MAR ← ${targetAddr}; MDR ← [AC]`,
+        run() {
+          clearStepVisuals();
+          const acVal = Number(cpuState.registers.AC.current) || 0;
+          markRegisterRead('IR');
+          markRegisterRead('AC');
+          writeRegister('MAR', targetAddr, 'write');
+          writeRegister('MDR', acVal, 'write');
+          cpuState.cu = { opcode: 'STA', detail: `Preparing addr [${targetAddr}] in MAR & data (${acVal}) in MDR` };
+          cpuState.narratorText = `EXECUTE 1 (STA): Control Unit copies target address (${targetAddr}) into MAR and copies AC (${acVal}) into MDR.`;
+        }
+      });
+
+      // EXECUTE 2: RAM[MAR] <- [MDR]
+      cpuState.microStepQueue.push({
+        phase: 'EXECUTE',
+        label: 'EXECUTE 2',
+        rtl: `RAM[${targetAddr}] ← [MDR]`,
+        isFinalInInstruction: true,
+        run() {
+          clearStepVisuals();
+          const mdrVal = Number(cpuState.registers.MDR.current) || 0;
+          markRegisterRead('MAR');
+          markRegisterRead('MDR');
+
+          cpuState.ram[targetAddr] = {
+            ...cpuState.ram[targetAddr],
+            type: 'DATA',
+            opcode: 'DAT',
+            operand: mdrVal,
+            value: mdrVal,
+            raw: `DAT ${mdrVal}`
+          };
+
+          cpuState.activeRamHighlight = { addr: targetAddr, mode: 'write' };
+          cpuState.buses.address = { active: true, value: `Addr [${targetAddr}]`, dir: 'right' };
+          cpuState.buses.control = { active: true, value: 'MEM_WRITE', dir: 'right' };
+          cpuState.buses.data = { active: true, value: `→ ${mdrVal}`, dir: 'right' };
+          cpuState.cu = { opcode: 'STA', detail: `Writing MDR (${mdrVal}) into RAM[${targetAddr}]` };
+          cpuState.narratorText = `EXECUTE 2 (STA): Control Bus asserts WRITE; Address Bus selects RAM[${targetAddr}]; Data Bus writes MDR (${mdrVal}) into RAM[${targetAddr}]. Instruction complete!`;
+        }
+      });
+    }
+
+    /**
+     * Enqueue Execute micro-step for INP
+     */
+    function enqueueInputExecute() {
+      cpuState.microStepQueue.push({
+        phase: 'EXECUTE',
+        label: 'EXECUTE (INP)',
+        rtl: 'AC ← INPUT',
+        isFinalInInstruction: true,
+        run() {
+          clearStepVisuals();
+          if (cpuState.inputIndex >= cpuState.inputQueue.length) {
+            // Re-queue this step and pause for user input
+            cpuState.phase = 'AWAIT_INPUT';
+            cpuState.currentMicroLabel = 'AWAITING INPUT';
+            cpuState.narratorText = `AWAITING INPUT: The Input Stream is empty! Enter a number in the "Input Stream (for INP)" box on the left and click "Set Queue" to continue.`;
+            enqueueInputExecute();
+            stopAutoRun();
+            const card = document.getElementById('input-queue-card');
+            card.classList.add('ring-2', 'ring-amber-500');
+            document.getElementById('input-stream-field').focus();
+            return false; // Did not finish instruction
+          }
+
+          document.getElementById('input-queue-card').classList.remove('ring-2', 'ring-amber-500');
+          const nextVal = cpuState.inputQueue[cpuState.inputIndex];
+          cpuState.inputIndex += 1;
+          writeRegister('AC', nextVal, 'write');
+          cpuState.alu = { op: `INPUT (${nextVal}) → AC` };
+          cpuState.cu = { opcode: 'INP', detail: `Read ${nextVal} from Input Stream into AC` };
+          cpuState.narratorText = `EXECUTE (INP): Read integer ${nextVal} from the Input Stream into the Accumulator (AC = ${nextVal}). Instruction complete!`;
+          return true;
+        }
+      });
+    }
+
+    /**
+     * Enqueue Execute micro-step for OUT
+     */
+    function enqueueOutputExecute() {
+      cpuState.microStepQueue.push({
+        phase: 'EXECUTE',
+        label: 'EXECUTE (OUT)',
+        rtl: 'OUTPUT ← [AC]',
+        isFinalInInstruction: true,
+        run() {
+          clearStepVisuals();
+          const acVal = cpuState.registers.AC.current;
+          markRegisterRead('AC');
+          cpuState.outputs.push({
+            value: acVal,
+            step: cpuState.microStepsCompleted + 1,
+            instr: cpuState.instructionsCompleted + 1
+          });
+          cpuState.cu = { opcode: 'OUT', detail: `Sent AC (${acVal}) to Output Tape` };
+          cpuState.narratorText = `EXECUTE (OUT): Accumulator value (${acVal}) emitted to the Output Tape. Instruction complete!`;
+        }
+      });
+    }
+
+    /**
+     * Enqueue Execute micro-step for BRA, BRZ, BRP
+     */
+    function enqueueBranchExecute(op, targetAddr) {
+      cpuState.microStepQueue.push({
+        phase: 'EXECUTE',
+        label: `EXECUTE (${op})`,
+        rtl: op === 'BRA' ? `PC ← ${targetAddr}` : op === 'BRZ' ? `if (AC == 0) PC ← ${targetAddr}` : `if (AC ≥ 0) PC ← ${targetAddr}`,
+        isFinalInInstruction: true,
+        run() {
+          clearStepVisuals();
+          const acVal = Number(cpuState.registers.AC.current) || 0;
+          markRegisterRead('AC');
+
+          let takeBranch = false;
+          if (op === 'BRA') takeBranch = true;
+          if (op === 'BRZ') takeBranch = acVal === 0;
+          if (op === 'BRP') takeBranch = acVal >= 0;
+
+          if (takeBranch) {
+            writeRegister('PC', targetAddr, 'write');
+            cpuState.alu = { op: `${op} TRUE → Jump [${targetAddr}]` };
+            cpuState.cu = { opcode: op, detail: `Branch TAKEN → PC set to ${targetAddr}` };
+            cpuState.narratorText = `EXECUTE (${op}): Condition met (AC = ${acVal}). PC is overwritten with branch target [${targetAddr}]. Next instruction will fetch from RAM[${targetAddr}]!`;
+          } else {
+            markRegisterRead('PC');
+            cpuState.alu = { op: `${op} FALSE → Continue` };
+            cpuState.cu = { opcode: op, detail: `Branch NOT taken (AC = ${acVal})` };
+            cpuState.narratorText = `EXECUTE (${op}): Condition NOT met (AC = ${acVal}). Branch skipped; PC remains ${cpuState.registers.PC.current}.`;
+          }
+        }
+      });
+    }
+
+    /**
+     * Execute a single Micro-Step
+     */
+    function stepMicroOperation() {
+      if (cpuState.phase === 'HALTED') {
+        cpuState.narratorText = 'CPU is HALTED. Click "Reset" to restart from PC = 0.';
+        renderAllCpuUI();
+        return false;
+      }
+
+      if (cpuState.microStepQueue.length === 0) {
+        cpuState.microStepQueue = buildInstructionMicroSteps();
+      }
+
+      const nextStep = cpuState.microStepQueue.shift();
+      if (!nextStep) return false;
+
+      cpuState.phase = nextStep.phase;
+      cpuState.currentMicroLabel = nextStep.label;
+      cpuState.currentRtl = nextStep.rtl;
+
+      const result = nextStep.run();
+      if (result === false) {
+        // Paused awaiting input
+        renderAllCpuUI();
+        return false;
+      }
+
+      cpuState.microStepsCompleted += 1;
+      if (nextStep.isFinalInInstruction) {
+        cpuState.instructionsCompleted += 1;
+      }
+
+      renderAllCpuUI();
+      return true;
+    }
+
+    /**
+     * Execute a Full Instruction (all remaining micro-steps of the current instruction)
+     */
+    function stepFullInstruction() {
+      if (cpuState.phase === 'HALTED') {
+        renderAllCpuUI();
+        return;
+      }
+      const startInstrCount = cpuState.instructionsCompleted;
+      let safety = 0;
+      while (
+        cpuState.phase !== 'HALTED' &&
+        cpuState.instructionsCompleted === startInstrCount &&
+        safety < 12
+      ) {
+        const progressed = stepMicroOperation();
+        if (!progressed) break;
+        safety++;
+      }
+    }
+
+    /**
+     * Auto-Run Controller
+     */
+    function toggleAutoRun() {
+      if (cpuState.autoRunTimer) {
+        stopAutoRun();
+      } else {
+        if (cpuState.phase === 'HALTED') {
+          resetCpuState();
+        }
+        startAutoRun();
+      }
+    }
+
+    function startAutoRun() {
+      stopAutoRun();
+      const btn = document.getElementById('btn-autorun');
+      const icon = document.getElementById('autorun-icon');
+      const label = document.getElementById('autorun-label');
+      icon.className = 'fa-solid fa-pause';
+      label.textContent = 'Pause';
+      btn.classList.add('ring-2', 'ring-amber-400');
+
+      const intervalMs = SPEED_MAP[cpuState.speedLevel].ms;
+      cpuState.autoRunTimer = setInterval(() => {
+        const ok = stepMicroOperation();
+        if (!ok || cpuState.phase === 'HALTED') {
+          stopAutoRun();
+        }
+      }, intervalMs);
+    }
+
+    function stopAutoRun() {
+      if (cpuState.autoRunTimer) {
+        clearInterval(cpuState.autoRunTimer);
+        cpuState.autoRunTimer = null;
+      }
+      const btn = document.getElementById('btn-autorun');
+      const icon = document.getElementById('autorun-icon');
+      const label = document.getElementById('autorun-label');
+      if (icon && label && btn) {
+        icon.className = 'fa-solid fa-play';
+        label.textContent = 'Auto-Run';
+        btn.classList.remove('ring-2', 'ring-amber-400');
+      }
+    }
+
+    /**
+     * Reset CPU Registers & State (re-assembling current editor code so RAM is fresh)
+     */
+    function resetCpuState(preserveRamEdits = false) {
+      stopAutoRun();
+      if (!preserveRamEdits) {
+        const source = document.getElementById('asm-editor').value;
+        const parsed = parseAssemblyProgram(source);
+        if (parsed.errors.length === 0) {
+          cpuState.ram = parsed.cells;
+        }
+      }
+      cpuState.registers = {
+        PC: { current: 0, prev: null },
+        MAR: { current: null, prev: null },
+        MDR: { current: null, prev: null },
+        IR: { current: null, prev: null },
+        AC: { current: 0, prev: null }
+      };
+      clearStepVisuals();
+      cpuState.cu = { opcode: 'IDLE', detail: 'Awaiting instruction in IR' };
+      cpuState.alu = { op: 'IDLE' };
+      cpuState.phase = 'IDLE';
+      cpuState.microStepQueue = [];
+      cpuState.currentMicroLabel = 'IDLE';
+      cpuState.currentRtl = 'READY';
+      cpuState.instructionsCompleted = 0;
+      cpuState.microStepsCompleted = 0;
+      cpuState.inputIndex = 0;
+      cpuState.outputs = [];
+      cpuState.narratorText = 'CPU reset to initial state (PC = 0). Click "Step Micro-Op (FDE)" or "Full Instruction" to run.';
+      document.getElementById('input-queue-card').classList.remove('ring-2', 'ring-amber-500');
+      renderAllCpuUI();
+    }
+
+    /**
+     * Parse Input Queue Field
+     */
+    function parseAndApplyInputStream() {
+      const raw = document.getElementById('input-stream-field').value.trim();
+      if (!raw) {
+        cpuState.inputQueue = [];
+      } else {
+        const nums = raw
+          .split(/[\s,]+/)
+          .map((s) => parseInt(s, 10))
+          .filter((n) => !Number.isNaN(n));
+        cpuState.inputQueue = nums;
+      }
+      if (cpuState.inputIndex > cpuState.inputQueue.length) {
+        cpuState.inputIndex = 0;
+      }
+      document.getElementById('input-queue-card').classList.remove('ring-2', 'ring-amber-500');
+      if (cpuState.phase === 'AWAIT_INPUT' && cpuState.inputIndex < cpuState.inputQueue.length) {
+        cpuState.phase = 'EXECUTE';
+        cpuState.narratorText = 'Input received! Click "Step Micro-Op (FDE)" to complete the INP instruction.';
+      }
+      renderAllCpuUI();
+    }
+
+    /**
+     * Update Editor Gutter Line Numbers & Active PC Line Highlight
+     */
+    function renderEditorGutter() {
+      const editor = document.getElementById('asm-editor');
+      const gutter = document.getElementById('code-gutter');
+      const lines = editor.value.split(/\r?\n/);
+      const lineCount = Math.max(lines.length, 8);
+      const pc = cpuState.registers.PC.current;
+
+      let html = '';
+      for (let i = 0; i < lineCount; i++) {
+        const isPcLine = i === pc && i < 16;
+        html += `<div class="${isPcLine ? 'text-cyan-500 font-bold' : ''}">${isPcLine ? '▶ ' : ''}${i}</div>`;
+      }
+      gutter.innerHTML = html;
+
+      // Live syntax validation
+      const parsed = parseAssemblyProgram(editor.value);
+      const badge = document.getElementById('asm-status-badge');
+      const errBox = document.getElementById('asm-error-box');
+      if (parsed.errors.length === 0) {
+        badge.textContent = '✓ Valid ASM';
+        badge.className = 'px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30';
+        errBox.classList.add('hidden');
+      } else {
+        badge.textContent = `${parsed.errors.length} Error(s)`;
+        badge.className = 'px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30';
+        errBox.textContent = parsed.errors[0];
+        errBox.classList.remove('hidden');
+      }
+    }
+
+    /**
+     * Render All CPU Simulator UI Elements
+     */
+    function renderAllCpuUI() {
+      renderEditorGutter();
+
+      // 1. Phase Pills & Narrator
+      const fetchPill = document.getElementById('phase-pill-fetch');
+      const decodePill = document.getElementById('phase-pill-decode');
+      const executePill = document.getElementById('phase-pill-execute');
+
+      const basePillClass = 'px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold uppercase tracking-wider border transition-all ';
+      const inactiveClass = 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700';
+
+      fetchPill.className = basePillClass + (cpuState.phase === 'FETCH'
+        ? 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 border-cyan-500 shadow-sm shadow-cyan-500/20'
+        : inactiveClass);
+      decodePill.className = basePillClass + (cpuState.phase === 'DECODE'
+        ? 'bg-amber-500/20 text-amber-600 dark:text-amber-300 border-amber-500 shadow-sm shadow-amber-500/20'
+        : inactiveClass);
+      executePill.className = basePillClass + (cpuState.phase === 'EXECUTE' || cpuState.phase === 'AWAIT_INPUT'
+        ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border-emerald-500 shadow-sm shadow-emerald-500/20'
+        : inactiveClass);
+
+      document.getElementById('rtl-badge').textContent = cpuState.currentRtl;
+      const microBadge = document.getElementById('micro-state-badge');
+      microBadge.textContent = cpuState.currentMicroLabel;
+      if (cpuState.phase === 'HALTED') {
+        microBadge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-rose-500/20 text-rose-600 dark:text-rose-300 border border-rose-500/40';
+      } else if (cpuState.phase === 'AWAIT_INPUT') {
+        microBadge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-500/40 animate-pulse';
+      } else {
+        microBadge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-cyan-500/15 text-cyan-600 dark:text-cyan-300 border border-cyan-500/30';
+      }
+
+      document.getElementById('narrator-banner').innerHTML = cpuState.narratorText;
+      document.getElementById('stat-instructions').textContent = cpuState.instructionsCompleted;
+      document.getElementById('stat-microsteps').textContent = cpuState.microStepsCompleted;
+
+      // 2. Registers
+      ['PC', 'MAR', 'MDR', 'IR', 'AC'].forEach((regName) => {
+        const reg = cpuState.registers[regName];
+        const card = document.getElementById(`reg-card-${regName}`);
+        const valEl = document.getElementById(`reg-val-${regName}`);
+        const prevEl = document.getElementById(`reg-prev-${regName}`);
+        const opBadge = document.getElementById(`reg-op-${regName}`);
+
+        valEl.textContent = reg.current === null ? '—' : String(reg.current);
+        prevEl.textContent = reg.prev === null ? 'No write recorded' : String(reg.prev);
+
+        card.classList.remove('reg-active-read', 'reg-active-write', 'reg-active-decode');
+        const hl = cpuState.activeRegHighlights[regName];
+        if (hl === 'read') {
+          card.classList.add('reg-active-read');
+          opBadge.textContent = 'READ';
+          opBadge.className = 'px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-500 border border-cyan-500/30';
+        } else if (hl === 'write') {
+          card.classList.add('reg-active-write');
+          opBadge.textContent = 'WRITE';
+          opBadge.className = 'px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-500 border border-emerald-500/30';
+        } else if (hl === 'decode') {
+          card.classList.add('reg-active-decode');
+          opBadge.textContent = 'DECODE';
+          opBadge.className = 'px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-500 border border-amber-500/30';
+        } else {
+          opBadge.className = 'hidden';
+        }
+      });
+
+      // 3. Control Unit & ALU Flags
+      document.getElementById('cu-opcode-badge').textContent = cpuState.cu.opcode;
+      document.getElementById('cu-detail').textContent = cpuState.cu.detail;
+      document.getElementById('alu-op-badge').textContent = cpuState.alu.op;
+
+      const acNum = Number(cpuState.registers.AC.current) || 0;
+      const isZ = acNum === 0;
+      const isP = acNum >= 0;
+      const isN = acNum < 0;
+
+      document.getElementById('flag-Z').textContent = `Z (AC=0): ${isZ ? 1 : 0}`;
+      document.getElementById('flag-Z').className = `px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+        isZ ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border-emerald-500/40' : 'bg-slate-200 dark:bg-slate-800 text-slate-400 border-slate-300 dark:border-slate-700'
+      }`;
+
+      document.getElementById('flag-P').textContent = `P (AC≥0): ${isP ? 1 : 0}`;
+      document.getElementById('flag-P').className = `px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+        isP ? 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 border-cyan-500/40' : 'bg-slate-200 dark:bg-slate-800 text-slate-400 border-slate-300 dark:border-slate-700'
+      }`;
+
+      document.getElementById('flag-N').textContent = `N (AC<0): ${isN ? 1 : 0}`;
+      document.getElementById('flag-N').className = `px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+        isN ? 'bg-rose-500/20 text-rose-600 dark:text-rose-300 border-rose-500/40' : 'bg-slate-200 dark:bg-slate-800 text-slate-400 border-slate-300 dark:border-slate-700'
+      }`;
+
+      // 4. System Buses
+      renderBus('address', cpuState.buses.address, 'cyan');
+      renderBus('data', cpuState.buses.data, 'emerald');
+      renderBus('control', cpuState.buses.control, 'amber');
+
+      // 5. Input Queue Pills & Output Console
+      renderInputQueuePills();
+      renderOutputConsole();
+
+      // 6. 16-Cell RAM Grid
+      renderRamGrid();
+    }
+
+    function renderBus(busKey, busState, colorName) {
+      const card = document.getElementById(`bus-card-${busKey}`);
+      const valEl = document.getElementById(`bus-val-${busKey}`);
+      const lineEl = document.getElementById(`bus-line-${busKey}`);
+
+      valEl.textContent = busState.value;
+      if (busState.active) {
+        card.className = `rounded-xl bg-slate-50 dark:bg-slate-950 border-2 border-${colorName}-500/70 p-2.5 transition-all shadow-sm`;
+        valEl.className = `px-2 py-0.5 rounded text-[11px] font-bold bg-${colorName}-500/20 text-${colorName}-600 dark:text-${colorName}-300 border border-${colorName}-500/40`;
+        lineEl.className = `h-full w-full text-${colorName}-500 opacity-100 ${busState.dir === 'left' ? 'bus-track-left' : 'bus-track-right'}`;
+      } else {
+        card.className = 'rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-2.5 transition-all';
+        valEl.className = 'px-2 py-0.5 rounded text-[11px] bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400';
+        lineEl.className = `h-full w-full text-${colorName}-500 opacity-20`;
+      }
+    }
+
+    function renderInputQueuePills() {
+      const container = document.getElementById('input-pills-container');
+      const countEl = document.getElementById('input-queue-count');
+      const waitingCount = Math.max(0, cpuState.inputQueue.length - cpuState.inputIndex);
+      countEl.textContent = `${waitingCount} waiting`;
+
+      if (cpuState.inputQueue.length === 0) {
+        container.innerHTML = `<span class="text-[11px] font-mono text-slate-400 italic">Queue empty</span>`;
+        return;
+      }
+
+      container.innerHTML = cpuState.inputQueue
+        .map((val, idx) => {
+          if (idx < cpuState.inputIndex) {
+            return `<span class="px-2 py-0.5 rounded text-[11px] font-mono bg-slate-200/60 dark:bg-slate-800/50 text-slate-400 line-through">✓ ${val}</span>`;
+          }
+          if (idx === cpuState.inputIndex) {
+            return `<span class="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-500/40">Next → ${val}</span>`;
+          }
+          return `<span class="px-2 py-0.5 rounded text-[11px] font-mono bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700">${val}</span>`;
+        })
+        .join('');
+    }
+
+    function renderOutputConsole() {
+      const consoleEl = document.getElementById('output-console');
+      if (cpuState.outputs.length === 0) {
+        consoleEl.innerHTML = `<div class="text-slate-500 italic">No output emitted yet...</div>`;
+        return;
+      }
+      consoleEl.innerHTML = cpuState.outputs
+        .map(
+          (item, idx) => `
+          <div class="flex items-center justify-between py-1 px-2 rounded bg-slate-900 border border-slate-800">
+            <span class="font-bold text-emerald-400 text-sm">&gt; ${item.value}</span>
+            <span class="text-[10px] text-slate-500">Out #${idx + 1} • Step ${item.step}</span>
+          </div>`
+        )
+        .join('');
+      consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+
+    function renderRamGrid() {
+      const grid = document.getElementById('ram-grid');
+      const pc = cpuState.registers.PC.current;
+      const mar = cpuState.registers.MAR.current;
+
+      grid.innerHTML = cpuState.ram
+        .map((cell) => {
+          const isPc = pc === cell.addr;
+          const isMar = mar === cell.addr;
+          const isHl = cpuState.activeRamHighlight && cpuState.activeRamHighlight.addr === cell.addr;
+          const hlClass = isHl
+            ? cpuState.activeRamHighlight.mode === 'write'
+              ? 'reg-active-write'
+              : 'reg-active-read'
+            : '';
+
+          const addrLabel = cpuState.binaryAddressMode
+            ? cell.addr.toString(2).padStart(4, '0')
+            : `[${cell.addr}]`;
+
+          const displayContent = formatRamCellDisplay(cell);
+          const isInstr = cell.type === 'INSTR';
+
+          return `
+            <div
+              data-ram-addr="${cell.addr}"
+              class="ram-cell-card group cursor-pointer rounded-xl bg-slate-50 dark:bg-slate-950/90 border-2 ${
+                isMar
+                  ? 'border-amber-500/80'
+                  : isPc
+                  ? 'border-cyan-500/70'
+                  : 'border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-700'
+              } p-2.5 transition-all ${hlClass}"
+              title="Click to edit RAM[${cell.addr}] in place"
+            >
+              <div class="flex items-center justify-between gap-1 mb-1">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-mono font-bold text-slate-500 dark:text-slate-400">${addrLabel}</span>
+                  ${
+                    cell.label
+                      ? `<span class="px-1.5 py-0.2 rounded text-[10px] font-mono font-semibold bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 border border-indigo-500/30">${cell.label}</span>`
+                      : ''
+                  }
+                </div>
+                <div class="flex items-center gap-1">
+                  ${
+                    isPc
+                      ? `<span class="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 border border-cyan-500/40">← PC</span>`
+                      : ''
+                  }
+                  ${
+                    isMar
+                      ? `<span class="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-500/40">← MAR</span>`
+                      : ''
+                  }
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between">
+                <span class="text-sm font-mono font-bold ${
+                  isInstr ? 'text-slate-900 dark:text-white' : 'text-emerald-600 dark:text-emerald-400'
+                }">
+                  ${displayContent}
+                </span>
+                <span class="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-900 text-slate-500 group-hover:text-cyan-500 transition">
+                  ${isInstr ? 'INSTR' : 'DATA'} ✎
+                </span>
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+
+      // Attach inline editor on click
+      grid.querySelectorAll('.ram-cell-card').forEach((cardEl) => {
+        cardEl.addEventListener('click', () => {
+          const addr = parseInt(cardEl.getAttribute('data-ram-addr'), 10);
+          openInlineRamEditor(cardEl, addr);
+        });
+      });
+    }
+
+    /**
+     * Inline Editor for any RAM Cell
+     */
+    function openInlineRamEditor(cardEl, addr) {
+      if (cardEl.querySelector('input')) return;
+      const cell = cpuState.ram[addr];
+      const currentStr = cell.type === 'INSTR' ? cell.raw : String(cell.value);
+
+      cardEl.innerHTML = `
+        <div class="text-[10px] font-mono text-cyan-500 font-bold mb-1">Edit RAM[${addr}] (Enter Int or ASM):</div>
+        <div class="flex gap-1">
+          <input type="text" value="${currentStr}" class="ram-inline-input w-full px-2 py-1 rounded bg-white dark:bg-slate-900 border border-cyan-500 font-mono text-xs text-slate-900 dark:text-white focus:outline-none" />
+          <button class="ram-inline-save px-2 py-1 rounded bg-cyan-500 text-white font-mono text-xs font-bold">OK</button>
+        </div>
+      `;
+
+      const input = cardEl.querySelector('.ram-inline-input');
+      const saveBtn = cardEl.querySelector('.ram-inline-save');
+      input.focus();
+      input.select();
+
+      const commitEdit = () => {
+        const val = input.value.trim();
+        if (/^-?\d+$/.test(val)) {
+          const num = parseInt(val, 10);
+          cpuState.ram[addr] = {
+            ...cell,
+            type: 'DATA',
+            opcode: 'DAT',
+            operand: num,
+            value: num,
+            raw: `DAT ${num}`
+          };
+        } else if (val) {
+          const singleParsed = parseAssemblyProgram(`${addr}: ${val}`);
+          if (singleParsed.errors.length === 0) {
+            cpuState.ram[addr] = singleParsed.cells[addr];
+          }
+        }
+        renderRamGrid();
+      };
+
+      saveBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        commitEdit();
+      });
+
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commitEdit();
+        } else if (e.key === 'Escape') {
+          renderRamGrid();
+        }
+      });
+    }
+
+    /*************************************************************************
+     * PART 2 • ACTIVITY 1: MEMORY HIERARCHY (INCLUSIVE LRU CACHE)
+     *************************************************************************/
+    const cacheState = {
+      ram: [
+        { addr: 0, val: 104 },
+        { addr: 1, val: 218 },
+        { addr: 2, val: 330 },
+        { addr: 3, val: 412 },
+        { addr: 4, val: 525 },
+        { addr: 5, val: 640 },
+        { addr: 6, val: 780 },
+        { addr: 7, val: 895 }
+      ],
+      L1: [], // Max 2 (index 0 = MRU, end = LRU)
+      L2: [], // Max 4
+      L3: [], // Max 6
+      lastCost: 0,
+      totalCost: 0,
+      totalReads: 0,
+      cacheHits: 0,
+      badges: { L1: 'IDLE', L2: 'IDLE', L3: 'IDLE', RAM: 'IDLE' },
+      activeAddr: null,
+      narrator: 'Click any address [0]–[7] above to trace a memory read through L1 (+1), L2 (+3), L3 (+8), and RAM (+25).'
+    };
+
+    function insertIntoCacheMRU(list, capacity, entry) {
+      const existingIdx = list.findIndex((e) => e.addr === entry.addr);
+      let evicted = null;
+      if (existingIdx !== -1) {
+        list.splice(existingIdx, 1);
+      } else if (list.length >= capacity) {
+        evicted = list.pop(); // Remove LRU at tail
+      }
+      list.unshift({ ...entry }); // Insert at MRU front
+      return evicted;
+    }
+
+    function removeAddrFromCache(list, addr) {
+      const idx = list.findIndex((e) => e.addr === addr);
+      if (idx !== -1) {
+        list.splice(idx, 1);
+        return true;
+      }
+      return false;
+    }
+
+    function readAddressThroughCache(addr) {
+      const entry = cacheState.ram[addr];
+      cacheState.activeAddr = addr;
+      cacheState.totalReads += 1;
+      let cost = 0;
+      const evictions = [];
+
+      // Check L1 (+1)
+      cost += 1;
+      const inL1 = cacheState.L1.some((e) => e.addr === addr);
+      if (inL1) {
+        cacheState.cacheHits += 1;
+        insertIntoCacheMRU(cacheState.L1, 2, entry);
+        cacheState.badges = { L1: 'HIT (+1)', L2: 'SKIPPED', L3: 'SKIPPED', RAM: 'SKIPPED' };
+        cacheState.narrator = `Read [${addr}] → <strong class="text-emerald-500">L1 HIT!</strong> Value (${entry.val}) supplied immediately in <strong>1 cycle</strong>. [${addr}] moved to MRU front of L1.`;
+      } else {
+        // L1 MISS -> Check L2 (+3)
+        cost += 3;
+        const inL2 = cacheState.L2.some((e) => e.addr === addr);
+        if (inL2) {
+          cacheState.cacheHits += 1;
+          insertIntoCacheMRU(cacheState.L2, 4, entry);
+          insertIntoCacheMRU(cacheState.L1, 2, entry);
+          cacheState.badges = { L1: 'MISS (+1)', L2: 'HIT (+3)', L3: 'SKIPPED', RAM: 'SKIPPED' };
+          cacheState.narrator = `Read [${addr}] → L1 MISS (+1) → <strong class="text-emerald-500">L2 HIT (+3)!</strong> Total cost: <strong>4 cycles</strong>. Promoted [${addr}] to MRU front of L2 and copied into L1.`;
+        } else {
+          // L2 MISS -> Check L3 (+8)
+          cost += 8;
+          const inL3 = cacheState.L3.some((e) => e.addr === addr);
+          if (inL3) {
+            cacheState.cacheHits += 1;
+            insertIntoCacheMRU(cacheState.L3, 6, entry);
+            const ev2 = insertIntoCacheMRU(cacheState.L2, 4, entry);
+            if (ev2) {
+              // Inclusive eviction: if L2 evicts an entry, remove it from L1
+              if (removeAddrFromCache(cacheState.L1, ev2.addr)) {
+                evictions.push(`L2 evicted [${ev2.addr}] (also invalidated in L1 for inclusion)`);
+              } else {
+                evictions.push(`L2 evicted LRU [${ev2.addr}]`);
+              }
+            }
+            insertIntoCacheMRU(cacheState.L1, 2, entry);
+            cacheState.badges = { L1: 'MISS (+1)', L2: 'MISS (+3)', L3: 'HIT (+8)', RAM: 'SKIPPED' };
+            cacheState.narrator = `Read [${addr}] → L1 MISS (+1) → L2 MISS (+3) → <strong class="text-emerald-500">L3 HIT (+8)!</strong> Total cost: <strong>12 cycles</strong>. Copied [${addr}] into L2 & L1.${
+              evictions.length ? ' (' + evictions.join('; ') + ')' : ''
+            }`;
+          } else {
+            // L3 MISS -> Read Main Memory RAM (+25)
+            cost += 25;
+            const ev3 = insertIntoCacheMRU(cacheState.L3, 6, entry);
+            if (ev3) {
+              // Inclusive eviction: if L3 evicts an entry, remove from L2 and L1
+              const remL2 = removeAddrFromCache(cacheState.L2, ev3.addr);
+              const remL1 = removeAddrFromCache(cacheState.L1, ev3.addr);
+              evictions.push(
+                `L3 evicted LRU [${ev3.addr}]${
+                  remL2 || remL1 ? ' (inclusive eviction removed copy from upper caches)' : ''
+                }`
+              );
+            }
+            const ev2 = insertIntoCacheMRU(cacheState.L2, 4, entry);
+            if (ev2) {
+              const remL1 = removeAddrFromCache(cacheState.L1, ev2.addr);
+              evictions.push(
+                `L2 evicted LRU [${ev2.addr}]${remL1 ? ' (inclusive eviction removed copy from L1)' : ''}`
+              );
+            }
+            insertIntoCacheMRU(cacheState.L1, 2, entry);
+
+            cacheState.badges = { L1: 'MISS (+1)', L2: 'MISS (+3)', L3: 'MISS (+8)', RAM: 'READ (+25)' };
+            cacheState.narrator = `Read [${addr}] → Cold/Full MISS across L1, L2, L3 → Fetched from <strong>Main Memory (RAM)</strong>! Total cost: <strong>37 cycles</strong> (1+3+8+25). Cached [${addr}] at MRU front of L3, L2, and L1.${
+              evictions.length ? ' <span class="text-amber-500">' + evictions.join(' • ') + '</span>' : ''
+            }`;
+          }
+        }
+      }
+
+      cacheState.lastCost = cost;
+      cacheState.totalCost += cost;
+      renderCacheHierarchy();
+    }
+
+    function resetCacheHierarchy() {
+      cacheState.L1 = [];
+      cacheState.L2 = [];
+      cacheState.L3 = [];
+      cacheState.lastCost = 0;
+      cacheState.totalCost = 0;
+      cacheState.totalReads = 0;
+      cacheState.cacheHits = 0;
+      cacheState.activeAddr = null;
+      cacheState.badges = { L1: 'IDLE', L2: 'IDLE', L3: 'IDLE', RAM: 'IDLE' };
+      cacheState.narrator = 'Cache hierarchy cleared. Click any address [0]–[7] to observe cold misses vs. subsequent cache hits.';
+      renderCacheHierarchy();
+    }
+
+    function renderCacheHierarchy() {
+      // Render Read Buttons
+      const btnContainer = document.getElementById('cache-read-buttons');
+      btnContainer.innerHTML = cacheState.ram
+        .map(
+          (item) => `
+          <button
+            data-cache-addr="${item.addr}"
+            class="cache-addr-btn px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold transition border ${
+              cacheState.activeAddr === item.addr
+                ? 'bg-cyan-500 text-white border-cyan-400 shadow-sm'
+                : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700'
+            }"
+          >
+            [${item.addr}]
+          </button>`
+        )
+        .join('');
+
+      btnContainer.querySelectorAll('.cache-addr-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const a = parseInt(btn.getAttribute('data-cache-addr'), 10);
+          readAddressThroughCache(a);
+        });
+      });
+
+      document.getElementById('cache-narrator').innerHTML = cacheState.narrator;
+      document.getElementById('cache-last-cost').textContent = `+${cacheState.lastCost}`;
+      document.getElementById('cache-total-cost').textContent = cacheState.totalCost;
+      const rate = cacheState.totalReads > 0 ? Math.round((cacheState.cacheHits / cacheState.totalReads) * 100) : 0;
+      document.getElementById('cache-hit-rate').textContent = `${rate}%`;
+
+      // Update Level Badges
+      ['L1', 'L2', 'L3', 'RAM'].forEach((lvl) => {
+        const badge = document.getElementById(`cache-badge-${lvl}`);
+        const text = cacheState.badges[lvl];
+        badge.textContent = text;
+        if (text.startsWith('HIT') || text.startsWith('READ')) {
+          badge.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/40';
+        } else if (text.startsWith('MISS')) {
+          badge.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-600 dark:text-rose-300 border border-rose-500/40';
+        } else {
+          badge.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-200 dark:bg-slate-800 text-slate-500';
+        }
+      });
+
+      // Render L1, L2, L3 Slots
+      renderCacheSlots('cache-slots-L1', cacheState.L1, 2);
+      renderCacheSlots('cache-slots-L2', cacheState.L2, 4);
+      renderCacheSlots('cache-slots-L3', cacheState.L3, 6);
+
+      // Render RAM Slots
+      const ramEl = document.getElementById('cache-slots-RAM');
+      ramEl.innerHTML = cacheState.ram
+        .map(
+          (item) => `
+          <div class="p-2 rounded-lg border font-mono text-center ${
+            cacheState.activeAddr === item.addr
+              ? 'bg-emerald-500/15 border-emerald-500 text-emerald-600 dark:text-emerald-300 font-bold'
+              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300'
+          }">
+            <div class="text-[10px] text-slate-400">[${item.addr}]</div>
+            <div class="text-xs font-bold">${item.val}</div>
+          </div>`
+        )
+        .join('');
+    }
+
+    function renderCacheSlots(containerId, list, capacity) {
+      const container = document.getElementById(containerId);
+      let html = '';
+      for (let i = 0; i < capacity; i++) {
+        const item = list[i];
+        const roleTag = i === 0 ? 'MRU' : i === capacity - 1 ? 'LRU' : `Slot ${i}`;
+        if (item) {
+          const isCurrent = item.addr === cacheState.activeAddr;
+          html += `
+            <div class="p-2 rounded-lg border font-mono ${
+              isCurrent
+                ? 'bg-cyan-500/15 border-cyan-500 text-cyan-700 dark:text-cyan-300'
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
+            }">
+              <div class="flex justify-between text-[9px] text-slate-400">
+                <span>${roleTag}</span>
+                <span>Addr [${item.addr}]</span>
+              </div>
+              <div class="text-xs font-bold mt-0.5">Val: ${item.val}</div>
+            </div>`;
+        } else {
+          html += `
+            <div class="p-2 rounded-lg border border-dashed border-slate-300 dark:border-slate-800 font-mono text-center text-slate-400 dark:text-slate-600">
+              <div class="text-[9px]">${roleTag}</div>
+              <div class="text-xs">Empty</div>
+            </div>`;
+        }
+      }
+      container.innerHTML = html;
+    }
+
+    /*************************************************************************
+     * PART 2 • ACTIVITY 2: INDEPENDENT CORES — SHARE THE WORK
+     *************************************************************************/
+    const CORE_INPUTS = [2, 3, 4, 5, 6, 7];
+    const coresState = {
+      stepCount: 0,
+      singleTasks: CORE_INPUTS.map((n) => ({ input: n, progress: 0, output: null })),
+      dualTasks: CORE_INPUTS.map((n, idx) => ({ input: n, progress: 0, output: null, core: idx % 2 })),
+      autoTimer: null
+    };
+
+    function stepCoresSimulation() {
+      if (coresState.stepCount >= 12) return;
+      coresState.stepCount += 1;
+
+      // 1-Core Machine advances one task by 1 unit (takes 12 steps for 6 tasks * 2 units)
+      const singleIdx = Math.floor((coresState.stepCount - 1) / 2);
+      if (singleIdx < coresState.singleTasks.length) {
+        const t = coresState.singleTasks[singleIdx];
+        t.progress += 1;
+        if (t.progress === 2) {
+          t.output = t.input * t.input;
+        }
+      }
+
+      // 2-Core Machine advances TWO tasks in parallel (finishes in 6 steps!)
+      if (coresState.stepCount <= 6) {
+        const pairBatch = Math.floor((coresState.stepCount - 1) / 2); // 0, 1, 2
+        const c0Idx = pairBatch * 2;
+        const c1Idx = pairBatch * 2 + 1;
+
+        [c0Idx, c1Idx].forEach((idx) => {
+          const t = coresState.dualTasks[idx];
+          if (t) {
+            t.progress += 1;
+            if (t.progress === 2) {
+              t.output = t.input * t.input;
+            }
+          }
+        });
+      }
+
+      renderCoresSimulation();
+      if (coresState.stepCount >= 12 && coresState.autoTimer) {
+        clearInterval(coresState.autoTimer);
+        coresState.autoTimer = null;
+      }
+    }
+
+    function resetCoresSimulation() {
+      if (coresState.autoTimer) {
+        clearInterval(coresState.autoTimer);
+        coresState.autoTimer = null;
+      }
+      coresState.stepCount = 0;
+      coresState.singleTasks = CORE_INPUTS.map((n) => ({ input: n, progress: 0, output: null }));
+      coresState.dualTasks = CORE_INPUTS.map((n, idx) => ({ input: n, progress: 0, output: null, core: idx % 2 }));
+      renderCoresSimulation();
+    }
+
+    function renderCoresSimulation() {
+      const sStep = Math.min(12, coresState.stepCount);
+      const dStep = Math.min(6, coresState.stepCount);
+
+      document.getElementById('single-core-status').textContent =
+        sStep >= 12 ? '✓ Done in 12 Steps' : `Step ${sStep} / 12`;
+      document.getElementById('dual-core-status').textContent =
+        dStep >= 6 ? '✓ Done in 6 Steps (2x Faster!)' : `Step ${dStep} / 6`;
+
+      // Active Core Status Labels
+      const sActiveIdx = sStep === 0 ? 0 : Math.min(5, Math.floor((sStep - 1) / 2));
+      const sTask = coresState.singleTasks[sActiveIdx];
+      document.getElementById('single-core-active').textContent =
+        sStep === 0
+          ? 'Core 0: Ready to square 2, 3, 4, 5, 6, 7 sequentially'
+          : sStep >= 12
+          ? 'Core 0: Finished all 6 tasks after 12 steps'
+          : `Core 0: Squaring ${sTask.input}² (Work unit ${sTask.progress}/2)`;
+
+      if (dStep === 0) {
+        document.getElementById('dual-core-0-active').textContent = 'Core 0: Ready (Inputs 2, 4, 6)';
+        document.getElementById('dual-core-1-active').textContent = 'Core 1: Ready (Inputs 3, 5, 7)';
+      } else if (dStep >= 6 && coresState.stepCount > 6) {
+        document.getElementById('dual-core-0-active').textContent = 'Core 0: Idle (All done at step 6!)';
+        document.getElementById('dual-core-1-active').textContent = 'Core 1: Idle (All done at step 6!)';
+      } else {
+        const pairBatch = Math.min(2, Math.floor((dStep - 1) / 2));
+        const t0 = coresState.dualTasks[pairBatch * 2];
+        const t1 = coresState.dualTasks[pairBatch * 2 + 1];
+        document.getElementById('dual-core-0-active').textContent = `Core 0: ${t0.input}² (${t0.progress}/2)`;
+        document.getElementById('dual-core-1-active').textContent = `Core 1: ${t1.input}² (${t1.progress}/2)`;
+      }
+
+      // Render Task Cards
+      document.getElementById('single-core-tasks').innerHTML = coresState.singleTasks
+        .map(
+          (t) => `
+          <div class="p-2.5 rounded-lg bg-white dark:bg-slate-900 border ${
+            t.progress === 2
+              ? 'border-emerald-500/60'
+              : t.progress === 1
+              ? 'border-cyan-500'
+              : 'border-slate-200 dark:border-slate-800'
+          } font-mono text-xs space-y-1.5">
+            <div class="flex justify-between">
+              <span class="font-bold">Input: ${t.input}</span>
+              <span class="${t.output ? 'text-emerald-500 font-bold' : 'text-slate-400'}">${
+            t.output ? `= ${t.output}` : `${t.progress}/2`
+          }</span>
+            </div>
+            <div class="w-full h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+              <div class="h-full ${t.progress === 2 ? 'bg-emerald-500' : 'bg-cyan-500'} transition-all" style="width: ${
+            (t.progress / 2) * 100
+          }%"></div>
+            </div>
+          </div>`
+        )
+        .join('');
+
+      document.getElementById('dual-core-tasks').innerHTML = coresState.dualTasks
+        .map(
+          (t) => `
+          <div class="p-2.5 rounded-lg bg-white dark:bg-slate-900 border ${
+            t.progress === 2
+              ? 'border-emerald-500/60'
+              : t.progress === 1
+              ? 'border-amber-500'
+              : 'border-slate-200 dark:border-slate-800'
+          } font-mono text-xs space-y-1.5">
+            <div class="flex justify-between">
+              <span class="font-bold">${t.input}² <span class="text-[10px] text-slate-400">(C${t.core})</span></span>
+              <span class="${t.output ? 'text-emerald-500 font-bold' : 'text-slate-400'}">${
+            t.output ? `= ${t.output}` : `${t.progress}/2`
+          }</span>
+            </div>
+            <div class="w-full h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+              <div class="h-full ${t.progress === 2 ? 'bg-emerald-500' : 'bg-amber-500'} transition-all" style="width: ${
+            (t.progress / 2) * 100
+          }%"></div>
+            </div>
+          </div>`
+        )
+        .join('');
+    }
+
+    /*************************************************************************
+     * PART 2 • ACTIVITY 3: FOUR-STAGE INSTRUCTION PIPELINE
+     *************************************************************************/
+    const PIPELINE_INSTRUCTIONS = ['LDA 5', 'ADD 6', 'STA 7', 'OUT', 'HLT'];
+    const PIPELINE_STAGES = ['F', 'D', 'E', 'W'];
+    const STAGE_COLORS = {
+      F: 'bg-cyan-500 text-white',
+      D: 'bg-amber-500 text-slate-950',
+      E: 'bg-emerald-500 text-white',
+      W: 'bg-purple-500 text-white'
+    };
+
+    const pipeState = {
+      cycle: 0, // 0..20
+      autoTimer: null
+    };
+
+    function stepPipelineClock() {
+      if (pipeState.cycle >= 20) return;
+      pipeState.cycle += 1;
+      renderPipelineGrids();
+      if (pipeState.cycle >= 20 && pipeState.autoTimer) {
+        clearInterval(pipeState.autoTimer);
+        pipeState.autoTimer = null;
+      }
+    }
+
+    function resetPipelineClock() {
+      if (pipeState.autoTimer) {
+        clearInterval(pipeState.autoTimer);
+        pipeState.autoTimer = null;
+      }
+      pipeState.cycle = 0;
+      renderPipelineGrids();
+    }
+
+    function renderPipelineGrids() {
+      const c = pipeState.cycle;
+      document.getElementById('pipe-cycle-badge').textContent = `Cycle ${c} / 20`;
+
+      // Sequential completed count (each instruction finishes at cycle 4, 8, 12, 16, 20)
+      const seqDone = Math.min(5, Math.floor(c / 4));
+      // Pipelined completed count (instruction i finishes at cycle i + 4 -> cycles 4, 5, 6, 7, 8)
+      const ovlDone = c < 4 ? 0 : Math.min(5, c - 3);
+
+      document.getElementById('pipe-seq-done').textContent = `${seqDone} / 5 (20 cyc total)`;
+      document.getElementById('pipe-ovl-done').textContent = `${ovlDone} / 5 (8 cyc total)`;
+
+      document.getElementById('pipe-seq-state').textContent =
+        c === 0 ? 'Ready' : c >= 20 ? '✓ Completed at Cycle 20' : `Running Cycle ${c}...`;
+      document.getElementById('pipe-ovl-state').textContent =
+        c === 0 ? 'Ready' : c >= 8 ? '✓ All 5 Done at Cycle 8!' : `Running Cycle ${c} (Stages Overlapped)`;
+
+      // Build Sequential Grid
+      document.getElementById('pipe-grid-seq').innerHTML = buildPipelineTableHTML(false, c);
+      // Build Overlapped 4-Stage Pipeline Grid
+      document.getElementById('pipe-grid-ovl').innerHTML = buildPipelineTableHTML(true, c);
+    }
+
+    function buildPipelineTableHTML(isPipelined, currentCycle) {
+      let headerCells = `<th class="py-1.5 px-2 text-left text-[11px] font-mono text-slate-400">Instruction</th>`;
+      for (let cyc = 1; cyc <= 20; cyc++) {
+        const isCurrent = cyc === currentCycle;
+        headerCells += `<th class="py-1 px-1 text-center text-[10px] font-mono ${
+          isCurrent ? 'text-cyan-400 font-extrabold bg-cyan-500/15 rounded' : 'text-slate-400'
+        }">${cyc}</th>`;
+      }
+
+      let rows = '';
+      PIPELINE_INSTRUCTIONS.forEach((inst, idx) => {
+        const startCycle = isPipelined ? idx + 1 : idx * 4 + 1;
+        let rowCells = `<td class="py-1.5 px-2 font-mono text-xs font-bold text-slate-700 dark:text-slate-200 whitespace-nowrap">${
+          idx + 1
+        }. ${inst}</td>`;
+
+        for (let cyc = 1; cyc <= 20; cyc++) {
+          const stageIdx = cyc - startCycle;
+          const isScheduledStage = stageIdx >= 0 && stageIdx < 4;
+          const isReached = cyc <= currentCycle;
+          const isNow = cyc === currentCycle;
+
+          if (isScheduledStage && isReached) {
+            const stg = PIPELINE_STAGES[stageIdx];
+            const colorCls = STAGE_COLORS[stg];
+            rowCells += `<td class="p-0.5 text-center">
+              <span class="inline-block w-5 h-5 leading-5 rounded text-[10px] font-mono font-bold ${colorCls} ${
+              isNow ? 'ring-2 ring-white scale-110' : 'opacity-90'
+            } transition-transform">${stg}</span>
+            </td>`;
+          } else if (isScheduledStage && !isReached) {
+            const stg = PIPELINE_STAGES[stageIdx];
+            rowCells += `<td class="p-0.5 text-center">
+              <span class="inline-block w-5 h-5 leading-5 rounded text-[10px] font-mono text-slate-400 dark:text-slate-600 border border-dashed border-slate-300 dark:border-slate-800">${stg}</span>
+            </td>`;
+          } else {
+            rowCells += `<td class="p-0.5 text-center text-[10px] text-slate-300 dark:text-slate-800">·</td>`;
+          }
+        }
+        rows += `<tr class="border-t border-slate-200/60 dark:border-slate-800/70">${rowCells}</tr>`;
+      });
+
+      return `<table class="w-full border-collapse"><thead><tr>${headerCells}</tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    /*************************************************************************
+     * INITIALIZATION & EVENT LISTENERS
+     *************************************************************************/
+    window.onload = function () {
+      // Load default starter preset
+      const editor = document.getElementById('asm-editor');
+      editor.value = PRESET_PROGRAMS.add_two.code;
+      document.getElementById('input-stream-field').value = PRESET_PROGRAMS.add_two.inputs;
+      parseAndApplyInputStream();
+      resetCpuState();
+
+      // Editor input listener
+      editor.addEventListener('input', renderEditorGutter);
+
+      // Preset buttons
+      document.querySelectorAll('.preset-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const key = btn.getAttribute('data-preset');
+          const preset = PRESET_PROGRAMS[key];
+          if (!preset) return;
+
+          document.querySelectorAll('.preset-btn').forEach((b) => {
+            b.className =
+              'preset-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-cyan-500/40 transition';
+          });
+          btn.className =
+            'preset-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/25 transition';
+
+          editor.value = preset.code;
+          document.getElementById('input-stream-field').value = preset.inputs;
+          parseAndApplyInputStream();
+          resetCpuState();
+        });
+      });
+
+      // Assemble & Clear buttons
+      document.getElementById('btn-assemble').addEventListener('click', () => {
+        const parsed = parseAssemblyProgram(editor.value);
+        if (parsed.errors.length === 0) {
+          resetCpuState();
+        } else {
+          renderEditorGutter();
+        }
+      });
+
+      document.getElementById('btn-clear-asm').addEventListener('click', () => {
+        editor.value = 'HLT';
+        resetCpuState();
+      });
+
+      // Input & Output controls
+      document.getElementById('btn-apply-inputs').addEventListener('click', parseAndApplyInputStream);
+      document.getElementById('input-stream-field').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') parseAndApplyInputStream();
+      });
+      document.getElementById('btn-clear-output').addEventListener('click', () => {
+        cpuState.outputs = [];
+        renderOutputConsole();
+      });
+
+      // CPU Step & Run controls
+      document.getElementById('btn-micro-step').addEventListener('click', () => {
+        stopAutoRun();
+        stepMicroOperation();
+      });
+      document.getElementById('btn-full-step').addEventListener('click', () => {
+        stopAutoRun();
+        stepFullInstruction();
+      });
+      document.getElementById('btn-autorun').addEventListener('click', toggleAutoRun);
+      document.getElementById('btn-reset-cpu').addEventListener('click', () => resetCpuState(false));
+
+      // Speed slider
+      document.getElementById('speed-slider').addEventListener('input', (e) => {
+        cpuState.speedLevel = parseInt(e.target.value, 10);
+        document.getElementById('speed-label').textContent = SPEED_MAP[cpuState.speedLevel].label;
+        if (cpuState.autoRunTimer) {
+          startAutoRun();
+        }
+      });
+
+      // Binary / Decimal RAM Address Toggle
+      document.getElementById('btn-toggle-binary-addr').addEventListener('click', () => {
+        cpuState.binaryAddressMode = !cpuState.binaryAddressMode;
+        renderRamGrid();
+      });
+
+      // Theme Toggle
+      document.getElementById('btn-theme-toggle').addEventListener('click', () => {
+        const htmlEl = document.documentElement;
+        const isDark = htmlEl.classList.toggle('dark');
+        const icon = document.getElementById('theme-icon');
+        icon.className = isDark ? 'fa-solid fa-sun text-amber-400' : 'fa-solid fa-moon text-slate-700';
+      });
+
+      // Modals (ISA Reference & GitHub Blog Setup)
+      const isaModal = document.getElementById('isa-modal');
+      document.getElementById('btn-open-isa').addEventListener('click', () => isaModal.classList.remove('hidden'));
+      document.getElementById('btn-close-isa').addEventListener('click', () => isaModal.classList.add('hidden'));
+      isaModal.addEventListener('click', (e) => {
+        if (e.target === isaModal) isaModal.classList.add('hidden');
+      });
+
+      // Part 2 Lab Switcher Tabs
+      document.querySelectorAll('.lab-tab-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const tab = btn.getAttribute('data-lab-tab');
+          document.querySelectorAll('.lab-tab-btn').forEach((b) => {
+            b.className =
+              'lab-tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition';
+          });
+          btn.className =
+            'lab-tab-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm transition';
+
+          const cacheCard = document.getElementById('lab-card-cache');
+          const coresCard = document.getElementById('lab-card-cores');
+          const pipeCard = document.getElementById('lab-card-pipeline');
+
+          cacheCard.classList.toggle('hidden', tab !== 'all' && tab !== 'cache');
+          coresCard.classList.toggle('hidden', tab !== 'all' && tab !== 'cores');
+          pipeCard.classList.toggle('hidden', tab !== 'all' && tab !== 'pipeline');
+        });
+      });
+
+      // Initialize Activity 1: Cache Hierarchy
+      renderCacheHierarchy();
+      document.getElementById('btn-cache-reset').addEventListener('click', resetCacheHierarchy);
+      document.getElementById('btn-cache-demo').addEventListener('click', () => {
+        resetCacheHierarchy();
+        const demoSeq = [0, 1, 0, 2, 3, 4, 0];
+        let idx = 0;
+        const timer = setInterval(() => {
+          if (idx >= demoSeq.length) {
+            clearInterval(timer);
+            return;
+          }
+          readAddressThroughCache(demoSeq[idx]);
+          idx++;
+        }, 650);
+      });
+
+      // Initialize Activity 2: Independent Cores
+      renderCoresSimulation();
+      document.getElementById('btn-cores-step').addEventListener('click', stepCoresSimulation);
+      document.getElementById('btn-cores-reset').addEventListener('click', resetCoresSimulation);
+      document.getElementById('btn-cores-auto').addEventListener('click', () => {
+        if (coresState.autoTimer) {
+          clearInterval(coresState.autoTimer);
+          coresState.autoTimer = null;
+          return;
+        }
+        if (coresState.stepCount >= 12) resetCoresSimulation();
+        coresState.autoTimer = setInterval(stepCoresSimulation, 500);
+      });
+
+      // Initialize Activity 3: 4-Stage Pipeline
+      renderPipelineGrids();
+      document.getElementById('btn-pipe-step').addEventListener('click', stepPipelineClock);
+      document.getElementById('btn-pipe-reset').addEventListener('click', resetPipelineClock);
+      document.getElementById('btn-pipe-auto').addEventListener('click', () => {
+        if (pipeState.autoTimer) {
+          clearInterval(pipeState.autoTimer);
+          pipeState.autoTimer = null;
+          return;
+        }
+        if (pipeState.cycle >= 20) resetPipelineClock();
+        pipeState.autoTimer = setInterval(stepPipelineClock, 450);
+      });
+    };
+  </script>
+</body>
+</html>
