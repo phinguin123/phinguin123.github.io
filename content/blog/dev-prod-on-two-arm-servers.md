@@ -19,31 +19,31 @@ Most of this came out of about five days of going back and forth with Gemini (3.
 
 ```text
    my desktop (x86)
-   VS Code Remote-SSH ── just the screen and keyboard
-          │
-          ▼
-┌─────────── dev box (arm64, 2 OCPU / 12GB) ────────────┐
-│                                                        │
-│  ~/onlinejudge-dev          ~/onlinejudge-staging      │
-│  docker-compose.dev.yml     docker-compose.yml         │
-│  build: from source         image: <hub>/...:latest    │
-│  ./backend:/app (live)      no source used             │
-│  ports 8000 / 8088          ports 80 / 443             │
-│  dev_* volumes              prod_* volumes             │
-│  oj-dev-network             oj-network                 │
-│        │                          ▲                    │
-└────────┼──────────────────────────┼────────────────────┘
-         │ docker build / push      │ docker compose pull
-         ▼                          │
-    ┌─────────────┐                 │
-    │ Docker Hub  │─────────────────┤
-    │ arm64 only  │                 │
-    └─────────────┘                 ▼
-                       ┌──── prod box (arm64) ────┐
-                       │ ~/onlinejudge            │
-                       │ docker-compose.yml       │
-                       │ ports 80 / 443 only      │
-                       └──────────────────────────┘
+   VS Code Remote-SSH -- just the screen and keyboard
+          |
+          v
++----------- dev box (arm64, 2 OCPU / 12GB) -------------+
+|                                                        |
+|  ~/onlinejudge-dev          ~/onlinejudge-staging      |
+|  docker-compose.dev.yml     docker-compose.yml         |
+|  build: from source         image: <hub>/...:latest    |
+|  ./backend:/app (live)      no source used             |
+|  ports 8000 / 8088          ports 80 / 443             |
+|  dev_* volumes              prod_* volumes             |
+|  oj-dev-network             oj-network                 |
+|        |                          ^                    |
++--------+--------------------------+--------------------+
+         | docker build / push      | docker compose pull
+         v                          |
+    +-------------+                 |
+    | Docker Hub  |-----------------+
+    | arm64 only  |                 |
+    +-------------+                 v
+                       +---- prod box (arm64) ----+
+                       | ~/onlinejudge            |
+                       | docker-compose.yml       |
+                       | ports 80 / 443 only      |
+                       +--------------------------+
 ```
 
 ## Developing on the server

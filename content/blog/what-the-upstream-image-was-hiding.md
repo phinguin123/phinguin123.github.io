@@ -15,12 +15,12 @@ The upstream online judge ships its backend as one image that does everything: P
 
 ```text
 UPSTREAM (one container)                 MINE (split for development)
-┌────────── oj-backend ──────────┐       ┌── oj-frontend ──┐   ┌─── oj-backend ───┐
-│ supervisor                     │       │ nginx:alpine    │   │ supervisor       │
-│  ├─ nginx  → serves dist.zip   │       │ built Vue files │──▶│  └─ gunicorn     │
-│  └─ gunicorn @ 127.0.0.1:8000  │       │ :80 / :443      │   │     0.0.0.0:8000 │
-│ :8000 published as :80         │       └─────────────────┘   └──────────────────┘
-└────────────────────────────────┘        (dev: Vue dev server with hot reload)
++---------- oj-backend ----------+       +-- oj-frontend --+   +--- oj-backend ---+
+| supervisor                     |       | nginx:alpine    |   | supervisor       |
+|  |- nginx -> serves dist.zip   |       | built Vue files |-->|  `- gunicorn     |
+|  `- gunicorn @ 127.0.0.1:8000  |       | :80 / :443      |   |     0.0.0.0:8000 |
+| :8000 published as :80         |       +-----------------+   +------------------+
++--------------------------------+        (dev: Vue dev server with hot reload)
 ```
 
 Left side: nginx talks to gunicorn inside one container so `127.0.0.1` is enough, and the frontend is a zip somebody else built. Right side: separate containers on a Docker network, and I'm building the frontend myself for the first time. Pretty much every problem below comes from that one change.

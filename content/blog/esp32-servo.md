@@ -17,11 +17,11 @@ This is about the evening I spent debugging the servo in software when the actua
 
 ```text
                     Wi-Fi (2.4GHz)
-  server ──── GET /hood/on ────▶ ESP32-C3 SuperMini
-                                   │  5V  ──── red    ┐
-                                   │  GND ──── brown  ├─ SG90 ─▶ pushes hood button
-                                   │  GPIO ─── orange ┘
-                                   ▼
+  server ---- GET /hood/on ----> ESP32-C3 SuperMini
+                                   |  5V  ---- red    +
+                                   |  GND ---- brown  |- SG90 -> pushes hood button
+                                   |  GPIO --- orange +
+                                   v
                                  USB power
 ```
 

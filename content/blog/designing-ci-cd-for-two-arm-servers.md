@@ -65,14 +65,14 @@ Yes. A public image *is* the product — anyone can `docker pull` it and run my 
 ## The plan
 
 ```text
-push to develop ──▶ self-hosted runner (dev box, ARM)
-                      ├─ docker build (native)
-                      ├─ push image :staging
-                      └─ restart staging stack on the dev box
+push to develop --> self-hosted runner (dev box, ARM)
+                      |- docker build (native)
+                      |- push image :staging
+                      `- restart staging stack on the dev box
 
-merge to main ────▶ same runner
-                      ├─ build + push image :production
-                      └─ SSH into prod box ─▶ docker compose pull && up -d
+merge to main ----> same runner
+                      |- build + push image :production
+                      `- SSH into prod box -> docker compose pull && up -d
 ```
 
 ## What I'd change now
